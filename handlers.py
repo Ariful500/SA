@@ -7,10 +7,11 @@ from telegram.ext import ContextTypes
 from config import ADMIN_ID, DAILY_LIMIT, MAX_PER_ORDER
 from database import (
     get_user, add_user, unlink_user,
-    update_usage, reset_all_limits, reset_user_limit, add_user_limit,
+    update_usage, reset_all_limits, reset_user_limit, reset_user_usage, add_user_limit,
     ban_user, unban_user, get_all_users, get_leaderboard, get_total_sms,
     is_username_taken, get_user_by_telegram_username, reset_member,
     get_daily_limit, get_max_per_order, set_daily_limit, set_max_per_order,
+    has_pending_reset_request, set_pending_reset_request,
 )
 import lamix
 
@@ -209,8 +210,9 @@ async def refresh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
         return
     count = await reset_all_limits()
+    current_limit = await get_daily_limit()
     await update.message.reply_text(
-        f"🔄 *All Limits Reset!*\n\n✅ {count} জন ইউজারের লিমিট {DAILY_LIMIT} হয়েছে।",
+        f"🔄 *All Limits Reset!*\n\n✅ {count} জন ইউজারের লিমিট {current_limit} হয়েছে।",
         parse_mode="Markdown",
     )
 
@@ -864,6 +866,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "request_reset":
         if not user:
             return
+        if await has_pending_reset_request(user_id):
+            await query.answer("⏳ আপনার আগের রিকোয়েস্ট এখনো পেন্ডিং আছে। এডমিনের রেসপন্সের জন্য অপেক্ষা করুন।", show_alert=True)
+            return
         keyboard = [[
             InlineKeyboardButton("✅ Approve", callback_data=f"approve_reset_{user_id}"),
             InlineKeyboardButton("❌ Deny", callback_data=f"deny_reset_{user_id}"),
@@ -883,7 +888,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
-            await query.edit_message_text("✅ রিকোয়েস্ট পাঠানো হয়েছে!")
+            await set_pending_reset_request(user_id, True)
+            await query.edit_message_text("✅ রিকোয়েস্ট পাঠানো হয়েছে!\n⏳ এডমিনের রেসপন্সের জন্য অপেক্ষা করুন।")
         except Exception as e:
             print(f"[request_reset] Admin notify failed: {e}")
             await query.edit_message_text(
@@ -900,17 +906,37 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("_")
         action = parts[0]
         target_id = int(parts[-1])
+        target_user = await get_user(target_id)
+        target_label = (
+            f"@{target_user['telegram_username']}" if target_user and target_user.get("telegram_username")
+            else str(target_id)
+        )
+
         if action == "approve":
-            await reset_user_limit(target_id)
-            await context.bot.send_message(
-                chat_id=target_id,
-                text=f"✅ *Limit Reset!*\n\nআপনার লিমিট {DAILY_LIMIT} হয়েছে।",
+            new_limit = await reset_user_usage(target_id)
+            await set_pending_reset_request(target_id, False)
+            try:
+                await context.bot.send_message(
+                    chat_id=target_id,
+                    text=f"✅ *Limit Reset!*\n\nআপনার আজকের ব্যবহার রিসেট হয়েছে।\n📊 লিমিট: {new_limit}",
+                    parse_mode="Markdown",
+                )
+            except Exception as e:
+                print(f"[approve_reset] User notify failed: {e}")
+            await query.edit_message_text(
+                f"✅ *Approved!*\n\n👤 {target_label}\n📊 আজকের ব্যবহার রিসেট হয়েছে (Limit: {new_limit})",
                 parse_mode="Markdown",
             )
-            await query.edit_message_text(query.message.text + "\n\n✅ *Approved!*", parse_mode="Markdown")
         else:
-            await context.bot.send_message(chat_id=target_id, text="❌ Limit Reset Request Deny করা হয়েছে।")
-            await query.edit_message_text(query.message.text + "\n\n❌ *Denied!*", parse_mode="Markdown")
+            await set_pending_reset_request(target_id, False)
+            try:
+                await context.bot.send_message(chat_id=target_id, text="❌ Limit Reset Request Deny করা হয়েছে।")
+            except Exception as e:
+                print(f"[deny_reset] User notify failed: {e}")
+            await query.edit_message_text(
+                f"❌ *Denied!*\n\n👤 {target_label}",
+                parse_mode="Markdown",
+            )
         return
 
     # ── Range Request ──
