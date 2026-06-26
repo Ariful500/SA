@@ -108,23 +108,53 @@ def verify_username(username: str) -> tuple[str | None, bool]:
     if not s:
         return None, False
     try:
+        # Browser থেকে পাওয়া exact params
         params = {
-            "sEcho": "1", "iColumns": "8", "sColumns": ",,,,,,",
-            "iDisplayStart": "0", "iDisplayLength": "1000",
+            "sEcho": "1",
+            "iColumns": "8",
+            "sColumns": "%2C%2C%2C%2C%2C%2C%2C",
+            "iDisplayStart": "0",
+            "iDisplayLength": "1000",
             **{f"mDataProp_{i}": str(i) for i in range(8)},
+            **{f"sSearch_{i}": "" for i in range(8)},
+            **{f"bRegex_{i}": "false" for i in range(8)},
+            **{f"bSearchable_{i}": "true" for i in range(8)},
+            # col 0 ও 7 sortable=false (browser থেকে দেখা)
+            **{f"bSortable_{i}": "false" if i in (0, 7) else "true" for i in range(8)},
             "sSearch": "", "bRegex": "false",
             "iSortCol_0": "0", "sSortDir_0": "asc", "iSortingCols": "1",
             "_": str(int(time.time() * 1000)),
         }
-        resp = s.get(f"{LAMIX_URL}/ints/agent/res/data_clients.php", params=params, timeout=15)
+        # Referer অবশ্যই Clients page হতে হবে
+        headers = {
+            "Referer": f"{LAMIX_URL}/ints/agent/Clients",
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+        }
+        resp = s.get(
+            f"{LAMIX_URL}/ints/agent/res/data_clients.php",
+            params=params,
+            headers=headers,
+            timeout=15,
+        )
+        print(f"Clients API status: {resp.status_code}")
         if resp.status_code != 200:
             return None, False
 
-        for row in resp.json().get("aaData", []):
-            if str(row[1]).strip().lower() == username.lower():
+        data = resp.json()
+        rows = data.get("aaData", [])
+        print(f"Clients found: {len(rows)}")
+
+        for row in rows:
+            row_username = str(row[1]).strip()
+            if row_username.lower() == username.lower():
+                # client_id বের করো row[0] এর checkbox input থেকে
                 inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
-                client_id = inp["value"] if inp else ""
+                client_id = inp["value"] if inp else row_username
+                print(f"✅ Username matched: {row_username}, client_id: {client_id}")
                 return client_id, True
+
+        print(f"❌ Username not found: {username}")
         return None, False
     except Exception as e:
         print(f"Verify Error: {e}")
@@ -171,10 +201,8 @@ def fetch_ranges() -> list[dict]:
         return []
     try:
         params = _base_params(echo="2", length=10000)
-        resp = s.get(
-            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-            params=params, timeout=30,
-        )
+        _h = {"Referer": f"{LAMIX_URL}/ints/agent/Numbers", "X-Requested-With": "XMLHttpRequest", "Accept": "application/json, text/javascript, */*; q=0.01"}
+        resp = s.get(f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php", params=params, headers=_h, timeout=30)
         if resp.status_code == 403:
             _reset_session()
             return fetch_ranges()
@@ -236,10 +264,8 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
         # শুধু ঐ range-এর নম্বর আনো
         params = _base_params(echo="3", length=10000)
         params["frange"] = range_name
-        resp = s.get(
-            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-            params=params, timeout=30,
-        )
+        _h = {"Referer": f"{LAMIX_URL}/ints/agent/Numbers", "X-Requested-With": "XMLHttpRequest", "Accept": "application/json, text/javascript, */*; q=0.01"}
+        resp = s.get(f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php", params=params, headers=_h, timeout=30)
         rows = resp.json().get("aaData", [])
 
         available_numbers, number_ids = [], []
@@ -282,4 +308,3 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
 
 async def allocate_numbers_async(client_id: str, range_name: str, quantity: int) -> dict | None:
     return await asyncio.to_thread(allocate_numbers, client_id, range_name, quantity)
-    
