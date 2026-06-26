@@ -1,5 +1,5 @@
 """
-lamix.py — Lamix scraping + async wrappers (fixed v2)
+lamix.py — Lamix scraping + async wrappers (fixed v3)
 """
 import re
 import time
@@ -107,20 +107,16 @@ def _numbers_params(echo: str = "1", length: int = 10000, frange: str = "") -> d
 
 # ══════════════════════════════════════════════
 #  AVAILABLE CHECK
-# client cell এ শুধু ✏ allocate link = খালি (available)
-# client cell এ নাম/text আছে = assigned (not available)
+# available = allocate link আছে, client নাম নেই
+# assigned = client নাম আছে + unallocate link আছে
 # ══════════════════════════════════════════════
 
 def _is_available(client_cell: str) -> bool:
     soup = BeautifulSoup(client_cell, "html.parser")
-    # সব tag বাদ দিয়ে শুধু text নিন
-    text = soup.get_text(strip=True)
-    # assigned হলে client নাম থাকবে (non-empty meaningful text)
-    # available হলে শুধু ✏ pencil icon বা খালি থাকবে
-    # "allocate" link আছে মানে এখনো কাউকে দেওয়া হয়নি
-    has_allocate_link = bool(soup.find("a", id="allocate"))
-    has_client_name = bool(text and text not in ("", "/", "✏", "✎"))
-    return has_allocate_link and not has_client_name
+    has_allocate   = bool(soup.find("a", id="allocate"))
+    has_unallocate = bool(soup.find("a", id="unallocate"))
+    # available মানে allocate link আছে, unallocate নেই
+    return has_allocate and not has_unallocate
 
 
 # ══════════════════════════════════════════════
@@ -175,9 +171,8 @@ def fetch_ranges() -> list[dict]:
                 timeout=30,
             )
 
-        data = resp.json()
-        rows = data.get("aaData", [])
-        print(f"[Ranges] Total rows from API: {len(rows)}")
+        rows = resp.json().get("aaData", [])
+        print(f"[Ranges] Total rows: {len(rows)}")
 
         range_dict: dict[str, dict] = {}
 
@@ -191,7 +186,6 @@ def fetch_ranges() -> list[dict]:
             number     = str(row[3]).strip()
             client_cell = str(row[5])
 
-            # Payout parse
             payout_text = BeautifulSoup(str(row[4]), "html.parser").get_text(" ", strip=True)
             payterm = "Weekly" if "weekly" in payout_text.lower() else payout_text.split()[0]
             payout  = next((p for p in payout_text.split() if p.startswith("$")), "$0.019").replace("$", "")
@@ -200,31 +194,26 @@ def fetch_ranges() -> list[dict]:
                 range_dict[range_name] = {
                     "id": range_name,
                     "name": range_name,
-                    "available": 0,   # শুধু unassigned count
-                    "total": 0,       # মোট number count
+                    "available": 0,
+                    "total": 0,
                     "payterm": payterm,
                     "payout": payout,
                     "country_code": _get_country_code(range_name),
-                    "numbers": [],    # unassigned numbers only
-                    "number_ids": [], # unassigned number IDs only
+                    "numbers": [],
+                    "number_ids": [],
                 }
 
             range_dict[range_name]["total"] += 1
 
-            # শুধু unassigned (truly available) numbers যোগ করুন
             if _is_available(client_cell) and num_id and number:
                 range_dict[range_name]["available"] += 1
                 range_dict[range_name]["numbers"].append(number)
                 range_dict[range_name]["number_ids"].append(num_id)
 
-        # শুধু available > 0 রাখুন, A→Z সর্ট করুন
         result = [r for r in range_dict.values() if r["available"] > 0]
         result.sort(key=lambda x: x["name"].upper())
 
         print(f"[Ranges] Available ranges (A→Z): {len(result)}")
-        for r in result:
-            print(f"  📦 {r['name']} — available: {r['available']}/{r['total']}")
-
         return result
 
     except Exception as e:
@@ -303,14 +292,25 @@ async def verify_username_async(username: str) -> tuple[str | None, bool]:
 
 # ══════════════════════════════════════════════
 #  ALLOCATE NUMBERS
+#  POST /ints/agent/res/allocatesmsnumber.php
+#  fields: action, id, client, payterm, payout, frange, fclient
 # ══════════════════════════════════════════════
+
+# Payterm name → value mapping
+PAYTERM_MAP = {
+    "daily": "1", "weekly": "2", "weekly7": "3",
+    "biweekly": "4", "biweekly30": "5",
+    "monthly15": "6", "monthly30": "7",
+    "monthly45": "8", "monthly60": "9",
+}
+
 
 def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | None:
     s = _get_session()
     if not s:
         return None
     try:
-        # Fresh data নিন শুধু ওই range এর জন্য
+        # Step 1: Fresh data নিন ওই range এর জন্য
         params = _numbers_params(echo="3", length=10000, frange=range_name)
         resp = s.get(
             f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
@@ -319,6 +319,7 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
         )
         rows = resp.json().get("aaData", [])
 
+        # Step 2: Available numbers collect
         available = []
         for row in rows:
             if len(row) < 6:
@@ -328,8 +329,15 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
             inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
             num_id = inp["value"] if inp else ""
             number = str(row[3]).strip()
+            # Payterm parse
+            payout_text = BeautifulSoup(str(row[4]), "html.parser").get_text(" ", strip=True).lower()
+            payterm_val = "2"  # default Weekly
+            for key, val in PAYTERM_MAP.items():
+                if key in payout_text:
+                    payterm_val = val
+                    break
             if num_id and number:
-                available.append((num_id, number))
+                available.append((num_id, number, payterm_val))
             if len(available) >= quantity:
                 break
 
@@ -342,18 +350,50 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                 "reason": f"Only {len(available)} available, requested {quantity}",
             }
 
+        # Step 3: প্রতিটা number allocate করুন
         assigned = []
-        for num_id, number in available[:quantity]:
+        for num_id, number, payterm_val in available[:quantity]:
             try:
-                r = s.post(
-                    f"{LAMIX_URL}/ints/agent/Numbers",
-                    data={"action": "assign", "eid": num_id, "client_id": client_id},
-                    headers={"Referer": f"{LAMIX_URL}/ints/agent/Numbers"},
+                # প্রথমে modal GET করুন (form token নিতে)
+                modal_resp = s.post(
+                    f"{LAMIX_URL}/ints/agent/res/allocatesmsnumber.php",
+                    data={"id": num_id, "frange": "", "fclient": ""},
+                    headers={
+                        "Referer": f"{LAMIX_URL}/ints/agent/MySMSNumbers?fclient=&frange=",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Accept": "*/*",
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    },
                     timeout=15,
                 )
-                print(f"[Allocate] {number} (id:{num_id}) → {r.status_code}")
-                if r.status_code == 200:
+                print(f"[Allocate] Modal GET {number}: {modal_resp.status_code}")
+
+                # তারপর allocate POST
+                alloc_resp = s.post(
+                    f"{LAMIX_URL}/ints/agent/res/allocatesmsnumber.php",
+                    data={
+                        "action":  "allocate",
+                        "id":      num_id,
+                        "client":  client_id,
+                        "payterm": payterm_val,
+                        "payout":  "0",
+                        "frange":  "",
+                        "fclient": "",
+                    },
+                    headers={
+                        "Referer": f"{LAMIX_URL}/ints/agent/MySMSNumbers?fclient=&frange=",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Accept": "*/*",
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    },
+                    timeout=15,
+                )
+                print(f"[Allocate] Assign {number} (id:{num_id}) → {alloc_resp.status_code}")
+                print(f"[Allocate] Response: {alloc_resp.text[:200]}")
+
+                if alloc_resp.status_code == 200:
                     assigned.append(number)
+
             except Exception as e:
                 print(f"[Allocate] Error [{number}]: {e}")
 
