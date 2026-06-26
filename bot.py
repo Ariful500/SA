@@ -24,7 +24,7 @@ from handlers import (
     # admin
     refresh_command, addlimit_command, leaderboard_command,
     fetchlimit_command, broadcast_command, ban_command,
-    unban_command, userlist_command,
+    unban_command, userlist_command, reset_command,
     # allocation
     add_nums_command, handle_callback,
 )
@@ -64,6 +64,7 @@ _USER_CMDS = [
 _ADMIN_CMDS = _USER_CMDS + [
     BotCommand("refresh",    "সবার লিমিট রিসেট"),
     BotCommand("addlimit",   "ইউজারের লিমিট বাড়ান"),
+    BotCommand("reset",      "ইউজার সম্পূর্ণ রিসেট"),
     BotCommand("leaderboard","SMS র‍্যাংকিং"),
     BotCommand("fetchlimit", "লিমিট সেটিংস"),
     BotCommand("broadcast",  "সবাইকে মেসেজ"),
@@ -108,6 +109,7 @@ def main():
     # Admin
     app.add_handler(CommandHandler("refresh",    refresh_command))
     app.add_handler(CommandHandler("addlimit",   addlimit_command))
+    app.add_handler(CommandHandler("reset",      reset_command))
     app.add_handler(CommandHandler("leaderboard",leaderboard_command))
     app.add_handler(CommandHandler("fetchlimit", fetchlimit_command))
     app.add_handler(CommandHandler("broadcast",  broadcast_command))
@@ -134,4 +136,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
