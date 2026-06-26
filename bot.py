@@ -16,7 +16,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from config import BOT_TOKEN, ADMIN_ID, LIMIT_RESET_HOUR, DAILY_LIMIT
 import lamix
-from database import init_db, reset_all_limits
+from database import init_db, reset_all_limits, get_daily_limit
 from handlers import (
     # user
     start_command, link_command, unlink_command,
@@ -42,9 +42,10 @@ logger = logging.getLogger(__name__)
 
 async def auto_reset_limits(app: Application):
     count = await reset_all_limits()
+    current_limit = await get_daily_limit()
     await app.bot.send_message(
         chat_id=ADMIN_ID,
-        text=f"🔄 অটো লিমিট রিসেট সম্পন্ন!\n\n✅ {count} জন ইউজারের লিমিট {DAILY_LIMIT} হয়েছে।",
+        text=f"🔄 অটো লিমিট রিসেট সম্পন্ন!\n\n✅ {count} জন ইউজারের লিমিট {current_limit} হয়েছে।",
     )
     logger.info(f"Auto reset done for {count} users")
 
