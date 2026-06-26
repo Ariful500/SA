@@ -35,6 +35,22 @@ async def _check_linked(update: Update) -> bool:
     return True
 
 
+def _num_has_code(number: str, code: str) -> bool:
+    """Check whether a number already contains the country code (with or without +)."""
+    if not code:
+        return False
+    return number.startswith(f"+{code}") or number.startswith(code)
+
+
+def _strip_code(number: str, code: str) -> str:
+    """Remove country code prefix (+ variant or plain) from a number."""
+    if number.startswith(f"+{code}"):
+        return number[len(code) + 1:]
+    if number.startswith(code):
+        return number[len(code):]
+    return number
+
+
 # ══════════════════════════════════════════════
 #  USER COMMANDS
 # ══════════════════════════════════════════════
@@ -395,7 +411,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         lamix_username = text.strip()
 
-        # ── ১. Username আগে নেওয়া আছে কিনা চেক ──
         if await is_username_taken(lamix_username):
             keyboard = [[InlineKeyboardButton("🔗 অন্য Username দিন", callback_data="link")]]
             await update.message.reply_text(
@@ -407,7 +422,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # ── ২. Lamix এ verify ──
         await update.message.reply_text("⏳ যাচাই করা হচ্ছে...")
         client_id, ok = await lamix.verify_username_async(lamix_username)
 
@@ -496,7 +510,6 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
     await update_usage(user_id, len(numbers))
     updated_user = await get_user(user_id)
 
-    # পুরো quantity না পেলে ব্যবহারকারীকে জানিয়ে দেওয়া হচ্ছে
     shortfall_note = ""
     if len(numbers) < quantity:
         shortfall_note = f"\n⚠️ চাওয়া হয়েছিল *{quantity}*, পাওয়া গেছে *{len(numbers)}*"
@@ -513,13 +526,33 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
     )
 
     country_code = selected.get("country_code", "")
+    context.user_data["last_numbers"] = "\n".join(numbers)
+    context.user_data["country_code"] = country_code
+
+    # ══ Smart detect: Lamix থেকে আসা নম্বরে code আগে থেকেই আছে কিনা ══
+    # যেমন Sri Lanka range এ 94760154688 → code=94 → starts with "94" → already embedded
+    code_already_in = (
+        bool(country_code) and
+        len(numbers) > 0 and
+        all(_num_has_code(n, country_code) for n in numbers)
+    )
+    context.user_data["code_embedded"] = code_already_in
+
     numbers_text = "\n".join([f"`{n}`" for n in numbers])
     keyboard = []
     if country_code:
-        keyboard.append([InlineKeyboardButton(f"➕ Add Country Code (+{country_code})", callback_data=f"add_code_{country_code}")])
-
-    context.user_data["last_numbers"] = "\n".join(numbers)
-    context.user_data["country_code"] = country_code
+        if code_already_in:
+            # নম্বরে code আছে → Remove বাটন দেখাও
+            keyboard.append([InlineKeyboardButton(
+                f"➖ Remove Country Code (+{country_code})",
+                callback_data=f"remove_code_{country_code}"
+            )])
+        else:
+            # নম্বরে code নেই → Add বাটন দেখাও
+            keyboard.append([InlineKeyboardButton(
+                f"➕ Add Country Code (+{country_code})",
+                callback_data=f"add_code_{country_code}"
+            )])
 
     await update.message.reply_text(
         f"📱 *Allocated Numbers ({len(numbers)}):*\n\n{numbers_text}",
@@ -680,11 +713,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ রেঞ্জ রিকোয়েস্ট পাঠানো হয়েছে!")
         return
 
-    # ── Add Country Code ──
-    # ✅ FIX: আগে এখানে প্রতিবার `query.message.reply_text` দিয়ে নতুন মেসেজ
-    # পাঠানো হতো (পুরনো মেসেজটা edit হতো না), এবং দ্বিতীয়বার চাপলে কোড আবার
-    # যোগ হয়ে ডাবল হয়ে যেত। এখন: (১) যেই লাইনে আগে থেকেই code আছে সেটা স্কিপ
-    # করা হয়, (২) একই মেসেজ edit করা হয় (নতুন মেসেজ পাঠানো হয় না)।
+    # ══════════════════════════════════════════════
+    #  ADD COUNTRY CODE
+    #  ✅ FIX: নম্বরে code already আছে কিনা smart detect করে।
+    #  - already থাকলে: strip করে plain রাখো, তারপর +code যোগ করো
+    #  - না থাকলে: সরাসরি +code যোগ করো
+    #  ডাবল হওয়ার কোনো সুযোগ নেই।
+    # ══════════════════════════════════════════════
     if data.startswith("add_code_"):
         code = data[len("add_code_"):]
         numbers_text = context.user_data.get("last_numbers", "")
@@ -693,13 +728,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             l = l.strip()
             if not l:
                 continue
-            if l.startswith(f"+{code}"):
-                lines.append(l)  # ইতিমধ্যে কোড আছে, আবার যোগ করা হচ্ছে না
-            else:
-                lines.append(f"+{code}{l}")
+            # যদি code আগে থেকেই আছে (যেকোনো রূপে) → strip করে নতুন করে লাগাও
+            plain = _strip_code(l, code)
+            lines.append(f"+{code}{plain}")
+
         context.user_data["last_numbers"] = "\n".join(lines)
+        context.user_data["code_embedded"] = True
         nums_md = "\n".join([f"`{n}`" for n in lines])
-        keyboard = [[InlineKeyboardButton("➖ Remove Country Code", callback_data=f"remove_code_{code}")]]
+        keyboard = [[InlineKeyboardButton(f"➖ Remove Country Code (+{code})", callback_data=f"remove_code_{code}")]]
         await query.edit_message_text(
             f"📱 *Allocated Numbers ({len(lines)}):*\n\n{nums_md}",
             parse_mode="Markdown",
@@ -716,11 +752,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             l = l.strip()
             if not l:
                 continue
-            if l.startswith(f"+{code}"):
-                lines.append(l[len(code) + 1:])
-            else:
-                lines.append(l)
+            lines.append(_strip_code(l, code))
+
         context.user_data["last_numbers"] = "\n".join(lines)
+        context.user_data["code_embedded"] = False
         nums_md = "\n".join([f"`{n}`" for n in lines])
         keyboard = [[InlineKeyboardButton(f"➕ Add Country Code (+{code})", callback_data=f"add_code_{code}")]]
         await query.edit_message_text(
