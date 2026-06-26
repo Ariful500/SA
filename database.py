@@ -99,6 +99,7 @@ async def init_db():
             json.dump({
                 "daily_limit": _DEFAULT_DAILY_LIMIT,
                 "max_per_order": _DEFAULT_MAX_PER_ORDER,
+                "auto_approve": False,
             }, f, indent=2)
 
 
@@ -148,6 +149,25 @@ async def set_max_per_order(new_max: int):
 
 
 # ══════════════════════════════════════════════
+#  AUTO-APPROVE TOGGLE
+#  ON থাকলে "Request Limit Reset" রিকোয়েস্ট ১০ সেকেন্ড পর
+#  স্বয়ংক্রিয়ভাবে approve হয়ে যায়।
+# ══════════════════════════════════════════════
+
+async def get_auto_approve() -> bool:
+    settings = await asyncio.to_thread(_load_settings)
+    return bool(settings.get("auto_approve", False))
+
+
+async def set_auto_approve(enabled: bool):
+    def _do():
+        settings = _load_settings()
+        settings["auto_approve"] = enabled
+        _save_settings(settings, f"⚙️ Auto-approve set to {enabled}")
+    await asyncio.to_thread(_do)
+
+
+# ══════════════════════════════════════════════
 #  GET USER
 # ══════════════════════════════════════════════
 
@@ -186,13 +206,53 @@ async def get_user_by_telegram_username(telegram_username: str) -> dict | None:
 async def is_username_taken(username: str) -> bool:
     data = await asyncio.to_thread(_load)
     for user in data.values():
-        if user.get("username", "").lower() == username.lower():
+        existing = user.get("username")
+        if existing and existing.lower() == username.lower():
             return True
     return False
 
 
 # ══════════════════════════════════════════════
-#  ADD USER
+#  REGISTER START USER
+#  /start কমান্ডে কল হয়। ইউজার যদি প্রথমবার বট চালু করে,
+#  তাহলে একটা স্থায়ী রেকর্ড তৈরি হয় (lamix link ছাড়াই)।
+#  এই রেকর্ড কখনো ডিলিট হয় না — unlink/reset শুধু lamix
+#  link ফিল্ড মুছে দেয়, পুরো রেকর্ড না।
+# ══════════════════════════════════════════════
+
+async def register_start_user(user_id: int, telegram_username: str):
+    current_limit = await get_daily_limit()
+
+    def _do():
+        data = _load()
+        uid = str(user_id)
+        if uid in data:
+            # ইতিমধ্যে আছে — শুধু telegram_username সাম্প্রতিক রাখা (বদলে থাকতে পারে)
+            data[uid]["telegram_username"] = telegram_username
+            _save(data, f"👋 User re-started bot: {telegram_username}")
+        else:
+            data[uid] = {
+                "user_id": user_id,
+                "username": None,
+                "telegram_username": telegram_username,
+                "client_id": None,
+                "is_linked": False,
+                "daily_used": 0,
+                "daily_limit": current_limit,
+                "total_allocated": 0,
+                "is_banned": False,
+                "pending_reset_request": False,
+                "created_at": datetime.now().isoformat(),
+            }
+            _save(data, f"👋 New user started bot: {telegram_username}")
+    await asyncio.to_thread(_do)
+
+
+# ══════════════════════════════════════════════
+#  ADD USER (LINK)
+#  /start এর কারণে রেকর্ড আগে থেকেই থাকতে পারে (limit/total সহ)।
+#  তাই এখানে নতুন রেকর্ড না বানিয়ে existing রেকর্ড আপডেট করা হয়,
+#  যাতে পুরনো daily_limit/total_allocated হারিয়ে না যায়।
 # ══════════════════════════════════════════════
 
 async def add_user(user_id: int, telegram_username: str, lamix_username: str, client_id: str):
@@ -200,30 +260,47 @@ async def add_user(user_id: int, telegram_username: str, lamix_username: str, cl
 
     def _do():
         data = _load()
-        data[str(user_id)] = {
-            "user_id": user_id,
-            "username": lamix_username,
-            "telegram_username": telegram_username,
-            "client_id": client_id,
-            "daily_used": 0,
-            "daily_limit": current_limit,
-            "total_allocated": 0,
-            "is_banned": False,
-            "created_at": datetime.now().isoformat(),
-        }
-        _save(data, f"👤 New user linked: {lamix_username}")
+        uid = str(user_id)
+        if uid in data:
+            # আগের রেকর্ড আছে (স্টার্ট করার কারণে) — limit/usage/total ছোয়া হচ্ছে না
+            data[uid]["username"] = lamix_username
+            data[uid]["telegram_username"] = telegram_username
+            data[uid]["client_id"] = client_id
+            data[uid]["is_linked"] = True
+        else:
+            data[uid] = {
+                "user_id": user_id,
+                "username": lamix_username,
+                "telegram_username": telegram_username,
+                "client_id": client_id,
+                "is_linked": True,
+                "daily_used": 0,
+                "daily_limit": current_limit,
+                "total_allocated": 0,
+                "is_banned": False,
+                "pending_reset_request": False,
+                "created_at": datetime.now().isoformat(),
+            }
+        _save(data, f"👤 User linked: {lamix_username}")
     await asyncio.to_thread(_do)
 
 
 # ══════════════════════════════════════════════
 #  UNLINK USER
+#  পুরো রেকর্ড ডিলিট হয় না — শুধু lamix-link তথ্য
+#  (username, client_id) মুছে যায়, daily_limit/daily_used/
+#  total_allocated/is_banned অপরিবর্তিত থাকে।
 # ══════════════════════════════════════════════
 
 async def unlink_user(user_id: int):
     def _do():
         data = _load()
-        data.pop(str(user_id), None)
-        _save(data, "❌ User unlinked")
+        uid = str(user_id)
+        if uid in data:
+            data[uid]["username"] = None
+            data[uid]["client_id"] = None
+            data[uid]["is_linked"] = False
+            _save(data, "❌ User unlinked (limit/usage preserved)")
     await asyncio.to_thread(_do)
 
 
@@ -358,19 +435,25 @@ async def unban_user(user_id: int):
 
 
 # ══════════════════════════════════════════════
-#  RESET MEMBER (পুরো ডেটা মুছে দেয় — unlink এর মতোই)
-#  /reset @Username কমান্ডের জন্য
+#  RESET MEMBER (lamix-link মুছে দেয়, /unlink এর মতোই)
+#  /reset @Username কমান্ডের জন্য — daily_limit, daily_used,
+#  total_allocated, is_banned অপরিবর্তিত থাকে। শুধু lamix
+#  username ও client_id মুছে যায়, ইউজারকে আবার /link করতে হবে।
 # ══════════════════════════════════════════════
 
-async def reset_member(user_id: int):
-    """ইউজারের সব ডেটা (লিমিট, ইউসেজ, লিঙ্ক) মুছে দেয়। আবার /link করতে হবে।"""
+async def reset_member(user_id: int) -> dict | None:
+    """ইউজারের lamix-link (username, client_id) মুছে দেয়। limit/usage/total অক্ষত থাকে।"""
     def _do():
         data = _load()
         uid = str(user_id)
-        removed = data.pop(uid, None)
-        if removed is not None:
-            _save(data, f"♻️ User fully reset: {uid}")
-        return removed
+        if uid in data:
+            snapshot = dict(data[uid])  # রিটার্নের জন্য পুরনো অবস্থার কপি (telegram_username দেখানোর জন্য)
+            data[uid]["username"] = None
+            data[uid]["client_id"] = None
+            data[uid]["is_linked"] = False
+            _save(data, f"♻️ User lamix-link reset (limit/usage preserved): {uid}")
+            return snapshot
+        return None
     return await asyncio.to_thread(_do)
 
 
@@ -400,3 +483,4 @@ async def get_leaderboard() -> list[dict]:
 async def get_total_sms() -> int:
     data = await asyncio.to_thread(_load)
     return sum(u.get("total_allocated", 0) for u in data.values())
+        
