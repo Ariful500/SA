@@ -1,4 +1,5 @@
 import datetime
+import re
 import aiohttp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -867,7 +868,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("✅ Approve", callback_data=f"approve_reset_{user_id}"),
             InlineKeyboardButton("❌ Deny", callback_data=f"deny_reset_{user_id}"),
         ]]
-        tg_uname = f"@{update.effective_user.username}" if update.effective_user.username else str(user_id)
+        raw_uname = update.effective_user.username
+        # Markdown স্পেশাল ক্যারেক্টার (_ * ` [) escape করা হচ্ছে, যাতে username এ
+        # underscore থাকলেও (যেমন Napa_Ex) parse error না হয় এবং message পাঠাতে ব্যর্থ না হয়
+        if raw_uname:
+            safe_uname = re.sub(r'([_*`\[])', r'\\\1', raw_uname)
+            tg_uname = f"@{safe_uname}"
+        else:
+            tg_uname = str(user_id)
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
@@ -908,13 +916,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Range Request ──
     if data.startswith("request_range_"):
         range_name = data[len("request_range_"):]
-        tg_uname = f"@{update.effective_user.username}" if update.effective_user.username else str(user_id)
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=f"🔔 *Range Request!*\n\n👤 {tg_uname}\n🆔 `{user_id}`\n📦 *{range_name}*",
-            parse_mode="Markdown",
-        )
-        await query.edit_message_text("✅ রেঞ্জ রিকোয়েস্ট পাঠানো হয়েছে!")
+        raw_uname = update.effective_user.username
+        if raw_uname:
+            safe_uname = re.sub(r'([_*`\[])', r'\\\1', raw_uname)
+            tg_uname = f"@{safe_uname}"
+        else:
+            tg_uname = str(user_id)
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"🔔 *Range Request!*\n\n👤 {tg_uname}\n🆔 `{user_id}`\n📦 *{range_name}*",
+                parse_mode="Markdown",
+            )
+            await query.edit_message_text("✅ রেঞ্জ রিকোয়েস্ট পাঠানো হয়েছে!")
+        except Exception as e:
+            print(f"[request_range] Admin notify failed: {e}")
+            await query.edit_message_text(
+                "⚠️ রিকোয়েস্ট পাঠাতে সমস্যা হয়েছে।\n"
+                "এডমিনকে সরাসরি যোগাযোগ করুন।"
+            )
         return
 
     # ══════════════════════════════════════════════
