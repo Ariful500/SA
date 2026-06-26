@@ -1,5 +1,12 @@
 """
-lamix.py — Lamix scraping + async wrappers (fixed v3)
+lamix.py — Lamix scraping + async wrappers (fixed v4)
+
+v4 fix: allocate_numbers() এখন সঠিক endpoint ব্যবহার করে।
+Network tab capture থেকে কনফার্ম হয়েছে যে actual allocate request যায়:
+    POST /ints/agent/MySMSNumbers?fclient=&frange=
+(আগের res/allocatesmsnumber.php endpoint টা ভুল ছিল — সেটা শুধু modal/preview দেখায়,
+আসল submit হয় MySMSNumbers পেজেই, normal form POST হিসেবে — তাই X-Requested-With
+header ছাড়া পাঠাতে হবে এবং success বোঝা যায় 302 redirect দিয়ে, 200 দিয়ে না)
 """
 import re
 import time
@@ -115,7 +122,6 @@ def _is_available(client_cell: str) -> bool:
     soup = BeautifulSoup(client_cell, "html.parser")
     has_allocate   = bool(soup.find("a", id="allocate"))
     has_unallocate = bool(soup.find("a", id="unallocate"))
-    # available মানে allocate link আছে, unallocate নেই
     return has_allocate and not has_unallocate
 
 
@@ -292,11 +298,25 @@ async def verify_username_async(username: str) -> tuple[str | None, bool]:
 
 # ══════════════════════════════════════════════
 #  ALLOCATE NUMBERS
-#  POST /ints/agent/res/allocatesmsnumber.php
-#  fields: action, id, client, payterm, payout, frange, fclient
+#
+#  ✅ FIXED (v4): Network tab capture থেকে কনফার্ম হয়েছে real endpoint:
+#     POST /ints/agent/MySMSNumbers?fclient=&frange=
+#     (NOT /ints/agent/res/allocatesmsnumber.php — সেটা ভুল ছিল)
+#
+#  Form fields (exact, ব্রাউজার থেকে capture করা):
+#     action=allocate
+#     id=<num_id>
+#     frange=
+#     fclient=
+#     client=<client_id>
+#     payterm=2        (Weekly)
+#     payout=0
+#
+#  Success signal: HTTP 302 redirect (Location: MySMSNumbers?fclient=&frange=)
+#  — এটা normal form POST, তাই X-Requested-With header পাঠানো হয়নি এখানে
+#  (session-level X-Requested-With override করে None সেট করা হয়েছে)
 # ══════════════════════════════════════════════
 
-# Payterm name → value mapping
 PAYTERM_MAP = {
     "daily": "1", "weekly": "2", "weekly7": "3",
     "biweekly": "4", "biweekly30": "5",
@@ -310,14 +330,16 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
     if not s:
         return None
     try:
-        # Step 1: Fresh data নিন ওই range এর জন্য
-        params = _numbers_params(echo="3", length=10000, frange=range_name)
+        # frange filter কাজ করে না, তাই সব data এনে range_name দিয়ে filter করি
+        params = _numbers_params(echo="3", length=10000, frange="")
         resp = s.get(
             f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
             params=params,
             timeout=30,
         )
-        rows = resp.json().get("aaData", [])
+        all_rows = resp.json().get("aaData", [])
+        rows = [r for r in all_rows if len(r) > 1 and str(r[1]).strip() == range_name]
+        print(f"[Allocate] '{range_name}' rows: {len(rows)} (total: {len(all_rows)})")
 
         # Step 2: Available numbers collect
         available = []
@@ -329,7 +351,6 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
             inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
             num_id = inp["value"] if inp else ""
             number = str(row[3]).strip()
-            # Payterm parse
             payout_text = BeautifulSoup(str(row[4]), "html.parser").get_text(" ", strip=True).lower()
             payterm_val = "2"  # default Weekly
             for key, val in PAYTERM_MAP.items():
@@ -350,49 +371,46 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                 "reason": f"Only {len(available)} available, requested {quantity}",
             }
 
-        # Step 3: প্রতিটা number allocate করুন
+        # Step 3: প্রতিটা number সঠিক endpoint দিয়ে allocate করুন
         assigned = []
+        mysms_referer = f"{LAMIX_URL}/ints/agent/MySMSNumbers?fclient=&frange="
+
         for num_id, number, payterm_val in available[:quantity]:
             try:
-                # প্রথমে modal GET করুন (form token নিতে)
-                modal_resp = s.post(
-                    f"{LAMIX_URL}/ints/agent/res/allocatesmsnumber.php",
-                    data={"id": num_id, "frange": "", "fclient": ""},
-                    headers={
-                        "Referer": f"{LAMIX_URL}/ints/agent/MySMSNumbers?fclient=&frange=",
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Accept": "*/*",
-                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    },
-                    timeout=15,
-                )
-                print(f"[Allocate] Modal GET {number}: {modal_resp.status_code}")
-
-                # তারপর allocate POST
                 alloc_resp = s.post(
-                    f"{LAMIX_URL}/ints/agent/res/allocatesmsnumber.php",
+                    f"{LAMIX_URL}/ints/agent/MySMSNumbers",
+                    params={"fclient": "", "frange": ""},
                     data={
                         "action":  "allocate",
                         "id":      num_id,
+                        "frange":  "",
+                        "fclient": "",
                         "client":  client_id,
                         "payterm": payterm_val,
                         "payout":  "0",
-                        "frange":  "",
-                        "fclient": "",
                     },
                     headers={
-                        "Referer": f"{LAMIX_URL}/ints/agent/MySMSNumbers?fclient=&frange=",
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Accept": "*/*",
-                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        # browser capture-এ এই request টা plain form submit ছিল,
+                        # XHR না — তাই AJAX headers override করে বাদ দেওয়া হলো
+                        "X-Requested-With": None,
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Referer": mysms_referer,
+                        "Origin": LAMIX_URL,
+                        "Upgrade-Insecure-Requests": "1",
                     },
                     timeout=15,
+                    allow_redirects=False,  # 302 ধরার জন্য, follow করব না
                 )
                 print(f"[Allocate] Assign {number} (id:{num_id}) → {alloc_resp.status_code}")
-                print(f"[Allocate] Response: {alloc_resp.text[:200]}")
+                print(f"[Allocate] Location: {alloc_resp.headers.get('Location', '')}")
 
-                if alloc_resp.status_code == 200:
+                # ✅ Success signal = 302 redirect (capture-এ এটাই দেখা গেছে)
+                # কিছু সার্ভার configuration এ 200 ও আসতে পারে, তাই দুটোই allow
+                if alloc_resp.status_code in (302, 200):
                     assigned.append(number)
+                else:
+                    print(f"[Allocate] Unexpected status for {number}: {alloc_resp.status_code}")
 
             except Exception as e:
                 print(f"[Allocate] Error [{number}]: {e}")
