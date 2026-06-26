@@ -14,131 +14,67 @@ _session: requests.Session | None = None
 
 
 # ══════════════════════════════════════════════
-#  CAPTCHA SOLVER
+#  CAPTCHA + LOGIN  (proven method)
 # ══════════════════════════════════════════════
 
 def _solve_captcha(soup: BeautifulSoup) -> str:
-    """
-    Login page এ 'What is 5+8=?' বা '5-3=?' টাইপ math captcha solve করে।
-    HTML text থেকে দুটো সংখ্যা ও অপারেটর বের করে answer দেয়।
-    """
     text = soup.get_text(" ", strip=True)
-    print(f"[Captcha] Page text snippet: {text[:300]}")
-
-    # Pattern: "What is 5 + 8" বা "5+8" বা "5 - 3" সব ধরন ধরে
-    m = re.search(r"(\d+)\s*([+\-])\s*(\d+)", text)
-    if m:
-        a, op, b = int(m.group(1)), m.group(2), int(m.group(3))
-        answer = str(a + b if op == "+" else a - b)
-        print(f"[Captcha] Solved: {a} {op} {b} = {answer}")
-        return answer
-
-    # Fallback: input field এ default value থাকলে
-    inp = soup.find("input", {"name": re.compile(r"capt|answer|math", re.I)})
-    if inp and inp.get("value"):
-        print(f"[Captcha] From input field: {inp['value']}")
-        return inp["value"]
-
-    print("[Captcha] ⚠️ Could not solve captcha, using 0")
+    match = re.search(r'(\d+)\s*([+\-])\s*(\d+)', text)
+    if match:
+        a, op, b = int(match.group(1)), match.group(2), int(match.group(3))
+        return str(a + b if op == '+' else a - b)
     return "0"
 
 
-def _get_captcha_field_name(soup: BeautifulSoup) -> str:
-    """Captcha input field এর name বের করো।"""
-    # সম্ভাব্য নামগুলো চেক করো
-    for name in ["capt", "captcha", "answer", "math_answer", "cap"]:
-        if soup.find("input", {"name": name}):
-            print(f"[Captcha] Field name: {name}")
-            return name
-
-    # যেকোনো hidden/text input খোঁজো যেটা username/password না
-    for inp in soup.find_all("input", {"type": ["text", "number", "hidden"]}):
-        n = inp.get("name", "")
-        if n and n not in ("username", "password", "user", "pass", "email"):
-            print(f"[Captcha] Found field: {n}")
-            return n
-
-    print("[Captcha] ⚠️ Using default field name: capt")
-    return "capt"
-
-
-# ══════════════════════════════════════════════
-#  LOGIN
-# ══════════════════════════════════════════════
-
 def _do_login() -> requests.Session | None:
     global _session
-    s = requests.Session()
-    s.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection": "keep-alive",
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     })
-
-    login_url = f"{LAMIX_URL}/ints/login"
-
     try:
-        # ── Step 1: GET login page (PHPSESSID cookie + captcha নেওয়ার জন্য) ──
-        resp = s.get(login_url, timeout=15)
-        print(f"[Login] GET {login_url} → {resp.status_code}")
-
-        if resp.status_code != 200:
-            print(f"[Login] ❌ GET failed: {resp.status_code}")
-            _session = None
-            return None
-
+        # Step 1: GET login page — cookie + captcha নেওয়া
+        resp = session.get(f"{LAMIX_URL}/ints/login", timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
+        captcha = _solve_captcha(soup)
+        print(f"[Login] Captcha solved: {captcha}")
 
-        # ── Step 2: Captcha solve ──
-        captcha_answer = _solve_captcha(soup)
-        captcha_field  = _get_captcha_field_name(soup)
-
-        # ── Step 3: POST login ──
-        post_data = {
-            "username": LAMIX_USERNAME,
-            "password": LAMIX_PASSWORD,
-            captcha_field: captcha_answer,
-        }
-        print(f"[Login] POST data: username={LAMIX_USERNAME}, {captcha_field}={captcha_answer}")
-
-        resp = s.post(
-            login_url,
-            data=post_data,
-            headers={
-                "Referer": login_url,
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Origin": LAMIX_URL,
+        # Step 2: POST credentials
+        resp = session.post(
+            f"{LAMIX_URL}/ints/signin",
+            data={
+                "username": LAMIX_USERNAME,
+                "password": LAMIX_PASSWORD,
+                "capt": captcha,
             },
             timeout=15,
             allow_redirects=True,
         )
-        print(f"[Login] POST → status={resp.status_code}, final_url={resp.url}")
+        print(f"[Login] POST → {resp.url}")
 
-        # ── Step 4: Success check ──
-        # সফল হলে /ints/agent বা dashboard এ redirect হবে
-        # ব্যর্থ হলে /ints/login এ থাকবে
-        final_url = resp.url.lower()
-        if "login" in final_url:
-            print(f"[Login] ❌ Failed! Still on login page.")
-            print(f"[Login] Response preview:\n{resp.text[:800]}")
+        # Step 3: Success check
+        # signin → 302 → agent/ → 302 → SMSDashboard (200)
+        # ব্যর্থ হলে /ints/login এ ফিরে আসবে
+        if "login" in resp.url.lower():
+            print("❌ Lamix Login Failed!")
+            print(f"[Login] Response preview: {resp.text[:400]}")
             _session = None
             return None
 
-        # ── Step 5: API headers সেট ──
-        s.headers.update({
+        print(f"✅ Login success! Landed on: {resp.url}")
+
+        # Step 4: API headers সেট
+        session.headers.update({
             "X-Requested-With": "XMLHttpRequest",
-            "Referer": f"{LAMIX_URL}/ints/agent",
+            "Referer": f"{LAMIX_URL}/ints/agent/SMSDashboard",
             "Origin": LAMIX_URL,
-            "Accept": "application/json, text/javascript, */*; q=0.01",
         })
-        _session = s
-        print("✅ Lamix Login OK!")
-        return s
+        _session = session
+        print("✅ Lamix Login OK")
+        return session
 
     except Exception as e:
-        print(f"[Login] ❌ Exception: {e}")
+        print(f"[Login] Error: {e}")
         _session = None
         return None
 
@@ -302,7 +238,6 @@ def fetch_ranges() -> list[dict]:
             timeout=30,
         )
 
-        # Session expire হলে re-login করে retry
         if resp.status_code == 403 or "login" in resp.url.lower():
             print("[Ranges] Session expired, re-logging in...")
             s = _reset_session()
@@ -404,7 +339,7 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                 if r.status_code == 200:
                     assigned.append(number)
             except Exception as e:
-                print(f"[Allocate] Assign Error [{number}]: {e}")
+                print(f"[Allocate] Error [{number}]: {e}")
 
         if not assigned:
             return {"status": "failed", "numbers": []}
@@ -418,4 +353,4 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
 
 async def allocate_numbers_async(client_id: str, range_name: str, quantity: int) -> dict | None:
     return await asyncio.to_thread(allocate_numbers, client_id, range_name, quantity)
-        
+    
