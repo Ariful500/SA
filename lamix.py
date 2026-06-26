@@ -14,48 +14,131 @@ _session: requests.Session | None = None
 
 
 # ══════════════════════════════════════════════
-#  CAPTCHA + LOGIN
+#  CAPTCHA SOLVER
 # ══════════════════════════════════════════════
 
 def _solve_captcha(soup: BeautifulSoup) -> str:
+    """
+    Login page এ 'What is 5+8=?' বা '5-3=?' টাইপ math captcha solve করে।
+    HTML text থেকে দুটো সংখ্যা ও অপারেটর বের করে answer দেয়।
+    """
     text = soup.get_text(" ", strip=True)
+    print(f"[Captcha] Page text snippet: {text[:300]}")
+
+    # Pattern: "What is 5 + 8" বা "5+8" বা "5 - 3" সব ধরন ধরে
     m = re.search(r"(\d+)\s*([+\-])\s*(\d+)", text)
     if m:
         a, op, b = int(m.group(1)), m.group(2), int(m.group(3))
-        return str(a + b if op == "+" else a - b)
+        answer = str(a + b if op == "+" else a - b)
+        print(f"[Captcha] Solved: {a} {op} {b} = {answer}")
+        return answer
+
+    # Fallback: input field এ default value থাকলে
+    inp = soup.find("input", {"name": re.compile(r"capt|answer|math", re.I)})
+    if inp and inp.get("value"):
+        print(f"[Captcha] From input field: {inp['value']}")
+        return inp["value"]
+
+    print("[Captcha] ⚠️ Could not solve captcha, using 0")
     return "0"
 
+
+def _get_captcha_field_name(soup: BeautifulSoup) -> str:
+    """Captcha input field এর name বের করো।"""
+    # সম্ভাব্য নামগুলো চেক করো
+    for name in ["capt", "captcha", "answer", "math_answer", "cap"]:
+        if soup.find("input", {"name": name}):
+            print(f"[Captcha] Field name: {name}")
+            return name
+
+    # যেকোনো hidden/text input খোঁজো যেটা username/password না
+    for inp in soup.find_all("input", {"type": ["text", "number", "hidden"]}):
+        n = inp.get("name", "")
+        if n and n not in ("username", "password", "user", "pass", "email"):
+            print(f"[Captcha] Found field: {n}")
+            return n
+
+    print("[Captcha] ⚠️ Using default field name: capt")
+    return "capt"
+
+
+# ══════════════════════════════════════════════
+#  LOGIN
+# ══════════════════════════════════════════════
 
 def _do_login() -> requests.Session | None:
     global _session
     s = requests.Session()
-    s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-    try:
-        resp = s.get(f"{LAMIX_URL}/login", timeout=15)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        captcha = _solve_captcha(soup)
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+    })
 
-        resp = s.post(
-            f"{LAMIX_URL}/signin",
-            data={"username": LAMIX_USERNAME, "password": LAMIX_PASSWORD, "capt": captcha},
-            timeout=15,
-            allow_redirects=True,
-        )
-        if "login" in resp.url.lower():
-            print("❌ Lamix Login Failed!")
+    login_url = f"{LAMIX_URL}/ints/login"
+
+    try:
+        # ── Step 1: GET login page (PHPSESSID cookie + captcha নেওয়ার জন্য) ──
+        resp = s.get(login_url, timeout=15)
+        print(f"[Login] GET {login_url} → {resp.status_code}")
+
+        if resp.status_code != 200:
+            print(f"[Login] ❌ GET failed: {resp.status_code}")
             _session = None
             return None
 
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # ── Step 2: Captcha solve ──
+        captcha_answer = _solve_captcha(soup)
+        captcha_field  = _get_captcha_field_name(soup)
+
+        # ── Step 3: POST login ──
+        post_data = {
+            "username": LAMIX_USERNAME,
+            "password": LAMIX_PASSWORD,
+            captcha_field: captcha_answer,
+        }
+        print(f"[Login] POST data: username={LAMIX_USERNAME}, {captcha_field}={captcha_answer}")
+
+        resp = s.post(
+            login_url,
+            data=post_data,
+            headers={
+                "Referer": login_url,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": LAMIX_URL,
+            },
+            timeout=15,
+            allow_redirects=True,
+        )
+        print(f"[Login] POST → status={resp.status_code}, final_url={resp.url}")
+
+        # ── Step 4: Success check ──
+        # সফল হলে /ints/agent বা dashboard এ redirect হবে
+        # ব্যর্থ হলে /ints/login এ থাকবে
+        final_url = resp.url.lower()
+        if "login" in final_url:
+            print(f"[Login] ❌ Failed! Still on login page.")
+            print(f"[Login] Response preview:\n{resp.text[:800]}")
+            _session = None
+            return None
+
+        # ── Step 5: API headers সেট ──
         s.headers.update({
             "X-Requested-With": "XMLHttpRequest",
             "Referer": f"{LAMIX_URL}/ints/agent",
             "Origin": LAMIX_URL,
+            "Accept": "application/json, text/javascript, */*; q=0.01",
         })
         _session = s
-        print("✅ Lamix Login OK")
+        print("✅ Lamix Login OK!")
         return s
+
     except Exception as e:
-        print(f"Login Error: {e}")
+        print(f"[Login] ❌ Exception: {e}")
         _session = None
         return None
 
@@ -72,14 +155,10 @@ def _reset_session() -> requests.Session | None:
 
 
 # ══════════════════════════════════════════════
-#  DATA TABLE PARAMS (real URL থেকে নেওয়া)
+#  DATA TABLE PARAMS
 # ══════════════════════════════════════════════
 
 def _base_params(echo: str = "1", length: int = 10000) -> dict:
-    """
-    ওয়েবসাইট থেকে পাওয়া real DataTables params।
-    totnum=220 (সাইটের ডিফল্ট), length বড় রাখলে সব আসে।
-    """
     return {
         "frange": "", "fclient": "", "totnum": "220",
         "sEcho": echo,
@@ -91,7 +170,6 @@ def _base_params(echo: str = "1", length: int = 10000) -> dict:
         **{f"sSearch_{i}": "" for i in range(8)},
         **{f"bRegex_{i}": "false" for i in range(8)},
         **{f"bSearchable_{i}": "true" for i in range(8)},
-        # column 0 ও 7 sortable=false (সাইট অনুযায়ী)
         **{f"bSortable_{i}": "false" if i in (0, 7) else "true" for i in range(8)},
         "sSearch": "", "bRegex": "false",
         "iSortCol_0": "0", "sSortDir_0": "asc", "iSortingCols": "1",
@@ -108,7 +186,6 @@ def verify_username(username: str) -> tuple[str | None, bool]:
     if not s:
         return None, False
     try:
-        # Browser থেকে পাওয়া exact params
         params = {
             "sEcho": "1",
             "iColumns": "8",
@@ -119,13 +196,11 @@ def verify_username(username: str) -> tuple[str | None, bool]:
             **{f"sSearch_{i}": "" for i in range(8)},
             **{f"bRegex_{i}": "false" for i in range(8)},
             **{f"bSearchable_{i}": "true" for i in range(8)},
-            # col 0 ও 7 sortable=false (browser থেকে দেখা)
             **{f"bSortable_{i}": "false" if i in (0, 7) else "true" for i in range(8)},
             "sSearch": "", "bRegex": "false",
             "iSortCol_0": "0", "sSortDir_0": "asc", "iSortingCols": "1",
             "_": str(int(time.time() * 1000)),
         }
-        # Referer অবশ্যই Clients page হতে হবে
         headers = {
             "Referer": f"{LAMIX_URL}/ints/agent/Clients",
             "X-Requested-With": "XMLHttpRequest",
@@ -137,27 +212,41 @@ def verify_username(username: str) -> tuple[str | None, bool]:
             headers=headers,
             timeout=15,
         )
-        print(f"Clients API status: {resp.status_code}")
+        print(f"[Verify] Clients API: {resp.status_code}")
+
+        # Session expire হলে re-login
+        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
+            print("[Verify] Session expired, re-logging in...")
+            s = _reset_session()
+            if not s:
+                return None, False
+            resp = s.get(
+                f"{LAMIX_URL}/ints/agent/res/data_clients.php",
+                params=params,
+                headers=headers,
+                timeout=15,
+            )
+
         if resp.status_code != 200:
             return None, False
 
         data = resp.json()
         rows = data.get("aaData", [])
-        print(f"Clients found: {len(rows)}")
+        print(f"[Verify] Clients found: {len(rows)}")
 
         for row in rows:
             row_username = str(row[1]).strip()
             if row_username.lower() == username.lower():
-                # client_id বের করো row[0] এর checkbox input থেকে
                 inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
                 client_id = inp["value"] if inp else row_username
-                print(f"✅ Username matched: {row_username}, client_id: {client_id}")
+                print(f"[Verify] ✅ Matched: {row_username}, client_id: {client_id}")
                 return client_id, True
 
-        print(f"❌ Username not found: {username}")
+        print(f"[Verify] ❌ Not found: {username}")
         return None, False
+
     except Exception as e:
-        print(f"Verify Error: {e}")
+        print(f"[Verify] Error: {e}")
         return None, False
 
 
@@ -201,27 +290,40 @@ def fetch_ranges() -> list[dict]:
         return []
     try:
         params = _base_params(echo="2", length=10000)
-        _h = {"Referer": f"{LAMIX_URL}/ints/agent/Numbers", "X-Requested-With": "XMLHttpRequest", "Accept": "application/json, text/javascript, */*; q=0.01"}
-        resp = s.get(f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php", params=params, headers=_h, timeout=30)
-        if resp.status_code == 403:
-            _reset_session()
-            return fetch_ranges()
+        headers = {
+            "Referer": f"{LAMIX_URL}/ints/agent/Numbers",
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+        }
+        resp = s.get(
+            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
+            params=params,
+            headers=headers,
+            timeout=30,
+        )
+
+        # Session expire হলে re-login করে retry
+        if resp.status_code == 403 or "login" in resp.url.lower():
+            print("[Ranges] Session expired, re-logging in...")
+            s = _reset_session()
+            if not s:
+                return []
+            resp = s.get(
+                f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
+                params=params,
+                headers=headers,
+                timeout=30,
+            )
 
         rows = resp.json().get("aaData", [])
         range_dict: dict[str, dict] = {}
 
         for row in rows:
-            # স্ক্রিনশট অনুযায়ী column mapping:
-            # row[0]=Range, row[1]=Prefix, row[2]=Number,
-            # row[3]=My Payout (Weekly/$0.019), row[4]=Client (✏=available),
-            # row[5]=Payout, row[6]=Limits
             range_name = str(row[0]).strip()
             number     = str(row[2]).strip()
-            # row[3] তে "Weekly" ও "$0.019" দুটোই থাকতে পারে HTML হিসেবে
             payout_raw = BeautifulSoup(str(row[3]), "html.parser").get_text(" ", strip=True) if len(row) > 3 else "Weekly $0.019"
             payterm    = "Weekly" if "weekly" in payout_raw.lower() else payout_raw.split()[0]
             payout     = next((p for p in payout_raw.split() if p.startswith("$")), "$0.019").replace("$", "")
-            # row[4] = Client কলাম — ✏ বা খালি মানে available
             client     = str(row[4]).strip() if len(row) > 4 else ""
 
             if range_name not in range_dict:
@@ -244,7 +346,7 @@ def fetch_ranges() -> list[dict]:
         return [r for r in range_dict.values() if r["available"] > 0]
 
     except Exception as e:
-        print(f"Fetch Ranges Error: {e}")
+        print(f"[Ranges] Error: {e}")
         return []
 
 
@@ -261,11 +363,19 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
     if not s:
         return None
     try:
-        # শুধু ঐ range-এর নম্বর আনো
         params = _base_params(echo="3", length=10000)
         params["frange"] = range_name
-        _h = {"Referer": f"{LAMIX_URL}/ints/agent/Numbers", "X-Requested-With": "XMLHttpRequest", "Accept": "application/json, text/javascript, */*; q=0.01"}
-        resp = s.get(f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php", params=params, headers=_h, timeout=30)
+        headers = {
+            "Referer": f"{LAMIX_URL}/ints/agent/Numbers",
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+        }
+        resp = s.get(
+            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
+            params=params,
+            headers=headers,
+            timeout=30,
+        )
         rows = resp.json().get("aaData", [])
 
         available_numbers, number_ids = [], []
@@ -294,7 +404,7 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                 if r.status_code == 200:
                     assigned.append(number)
             except Exception as e:
-                print(f"Assign Error [{number}]: {e}")
+                print(f"[Allocate] Assign Error [{number}]: {e}")
 
         if not assigned:
             return {"status": "failed", "numbers": []}
@@ -302,9 +412,10 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
         return {"status": "success", "numbers": assigned}
 
     except Exception as e:
-        print(f"Allocate Error: {e}")
+        print(f"[Allocate] Error: {e}")
         return None
 
 
 async def allocate_numbers_async(client_id: str, range_name: str, quantity: int) -> dict | None:
     return await asyncio.to_thread(allocate_numbers, client_id, range_name, quantity)
+        
