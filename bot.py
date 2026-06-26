@@ -35,6 +35,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ══════════════════════════════════════════════
+#  AUTO-SHUTDOWN CONFIG
+#  GitHub Actions ফ্রি রানারের hard limit ৬ ঘণ্টা (360 মিনিট)।
+#  তার ১ মিনিট আগেই (৫ ঘণ্টা ৫৯ মিনিট) বট নিজে গ্রেসফুলি বন্ধ হয়ে
+#  exit code 0 দিয়ে বের হবে — তাই GitHub Actions job "Success" দেখাবে,
+#  নিজে নিজে timeout এ কেটে গেলে যেমন "Cancelled/Failed" দেখাতো।
+# ══════════════════════════════════════════════
+SHUTDOWN_AFTER_SECONDS = 5 * 3600 + 59 * 60  # 21540 sec = 5h 59m
+
 
 # ══════════════════════════════════════════════
 #  SCHEDULED JOBS
@@ -48,6 +57,27 @@ async def auto_reset_limits(app: Application):
         text=f"🔄 অটো লিমিট রিসেট সম্পন্ন!\n\n✅ {count} জন ইউজারের লিমিট {current_limit} হয়েছে।",
     )
     logger.info(f"Auto reset done for {count} users")
+
+
+async def auto_shutdown(app: Application):
+    """৫ ঘণ্টা ৫৯ মিনিট পর বট নিজে গ্রেসফুলি বন্ধ হবে।"""
+    await asyncio.sleep(SHUTDOWN_AFTER_SECONDS)
+    logger.info("⏰ ৫ ঘণ্টা ৫৯ মিনিট পার হয়েছে — বট গ্রেসফুলি বন্ধ হচ্ছে...")
+    try:
+        await app.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                "⏰ ৫ ঘণ্টা ৫৯ মিনিট পার হয়ে গেছে।\n"
+                "GitHub Actions এর ৬ ঘণ্টা লিমিট এড়াতে বট এখন নিজেই বন্ধ হচ্ছে "
+                "(Job স্ট্যাটাস: ✅ Success)।"
+            ),
+        )
+    except Exception as e:
+        logger.warning(f"শাটডাউন নোটিস পাঠানো যায়নি: {e}")
+
+    # PTB v20+ এর পাবলিক API — run_polling() কে গ্রেসফুলি থামায়,
+    # যার ফলে main() normally রিটার্ন করে এবং প্রসেস exit code 0 দিয়ে শেষ হয়।
+    app.stop_running()
 
 
 # ══════════════════════════════════════════════
@@ -96,6 +126,10 @@ async def post_init(app: Application):
         await app.bot.send_message(chat_id=ADMIN_ID, text="Lamix Login ব্যর্থ! Username/Password চেক করুন।")
 
     logger.info("DB & Commands initialized")
+
+    # ৫ ঘণ্টা ৫৯ মিনিট পর অটো-শাটডাউন টাইমার চালু (background task)
+    asyncio.create_task(auto_shutdown(app))
+    logger.info(f"⏳ Auto-shutdown টাইমার চালু — {SHUTDOWN_AFTER_SECONDS} সেকেন্ড পর বট বন্ধ হবে।")
 
 
 # ══════════════════════════════════════════════
@@ -146,6 +180,7 @@ def main():
 
     logger.info("🚀 SA SMS WORK Bot চালু হয়েছে!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
+    logger.info("✅ বট গ্রেসফুলি বন্ধ হয়েছে (exit code 0)।")
 
 
 if __name__ == "__main__":
