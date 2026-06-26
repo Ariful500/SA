@@ -1,7 +1,7 @@
 name: SA SMS WORK Bot
 
 on:
-  workflow_dispatch:  # শুধু manually চালাবে, push এ না
+  workflow_dispatch:  # শুধু manually চালাবে
 
 jobs:
   run-bot:
@@ -10,6 +10,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -27,5 +30,24 @@ jobs:
           echo "LAMIX_USERNAME=${{ secrets.LAMIX_USERNAME }}" >> .env
           echo "LAMIX_PASSWORD=${{ secrets.LAMIX_PASSWORD }}" >> .env
 
+      - name: Restore users.json (আগের data লোড)
+        run: |
+          if [ ! -f users.json ]; then
+            echo "{}" > users.json
+            echo "users.json নতুন তৈরি হয়েছে।"
+          else
+            echo "users.json আগের data পাওয়া গেছে ✅"
+          fi
+
       - name: Run bot
         run: python bot.py
+
+      - name: Save users.json (bot বন্ধ হলে data সেভ)
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main --rebase
+          git add users.json
+          git diff --staged --quiet || git commit -m "💾 Auto-save: users data updated"
+          git push origin main
