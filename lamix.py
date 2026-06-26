@@ -1,5 +1,5 @@
 """
-lamix.py — Lamix ওয়েবসাইট স্ক্রেপিং + অ্যাসিঙ্ক র‍্যাপার
+lamix.py — Lamix scraping + async wrappers (fixed)
 """
 import re
 import time
@@ -9,12 +9,11 @@ from bs4 import BeautifulSoup
 
 from config import LAMIX_URL, LAMIX_USERNAME, LAMIX_PASSWORD
 
-# ── Global Session ─────────────────────────────────────────────────────────────
 _session: requests.Session | None = None
 
 
 # ══════════════════════════════════════════════
-#  CAPTCHA + LOGIN  (proven method)
+#  LOGIN
 # ══════════════════════════════════════════════
 
 def _solve_captcha(soup: BeautifulSoup) -> str:
@@ -30,49 +29,35 @@ def _do_login() -> requests.Session | None:
     global _session
     session = requests.Session()
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
     })
     try:
-        # Step 1: GET login page — cookie + captcha নেওয়া
         resp = session.get(f"{LAMIX_URL}/ints/login", timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
         captcha = _solve_captcha(soup)
-        print(f"[Login] Captcha solved: {captcha}")
+        print(f"[Login] Captcha: {captcha}")
 
-        # Step 2: POST credentials
         resp = session.post(
             f"{LAMIX_URL}/ints/signin",
-            data={
-                "username": LAMIX_USERNAME,
-                "password": LAMIX_PASSWORD,
-                "capt": captcha,
-            },
+            data={"username": LAMIX_USERNAME, "password": LAMIX_PASSWORD, "capt": captcha},
             timeout=15,
             allow_redirects=True,
         )
-        print(f"[Login] POST → {resp.url}")
-
-        # Step 3: Success check
-        # signin → 302 → agent/ → 302 → SMSDashboard (200)
-        # ব্যর্থ হলে /ints/login এ ফিরে আসবে
         if "login" in resp.url.lower():
-            print("❌ Lamix Login Failed!")
-            print(f"[Login] Response preview: {resp.text[:400]}")
+            print("❌ Login Failed!")
             _session = None
             return None
 
-        print(f"✅ Login success! Landed on: {resp.url}")
-
-        # Step 4: API headers সেট
         session.headers.update({
             "X-Requested-With": "XMLHttpRequest",
-            "Referer": f"{LAMIX_URL}/ints/agent/SMSDashboard",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Referer": f"{LAMIX_URL}/ints/agent/MySMSNumbers",
             "Origin": LAMIX_URL,
         })
         _session = session
-        print("✅ Lamix Login OK")
+        print(f"✅ Login OK → {resp.url}")
         return session
-
     except Exception as e:
         print(f"[Login] Error: {e}")
         _session = None
@@ -91,118 +76,55 @@ def _reset_session() -> requests.Session | None:
 
 
 # ══════════════════════════════════════════════
-#  DATA TABLE PARAMS
+#  NUMBERS API PARAMS
 # ══════════════════════════════════════════════
 
-def _base_params(echo: str = "1", length: int = 10000) -> dict:
-    return {
-        "frange": "", "fclient": "", "totnum": "220",
+def _numbers_params(echo: str = "1", length: int = 10000, frange: str = "") -> dict:
+    params = {
+        "frange": frange,
+        "fclient": "",
+        "totnum": "220",
         "sEcho": echo,
         "iColumns": "8",
         "sColumns": "%2C%2C%2C%2C%2C%2C%2C",
         "iDisplayStart": "0",
         "iDisplayLength": str(length),
-        **{f"mDataProp_{i}": str(i) for i in range(8)},
-        **{f"sSearch_{i}": "" for i in range(8)},
-        **{f"bRegex_{i}": "false" for i in range(8)},
-        **{f"bSearchable_{i}": "true" for i in range(8)},
-        **{f"bSortable_{i}": "false" if i in (0, 7) else "true" for i in range(8)},
-        "sSearch": "", "bRegex": "false",
-        "iSortCol_0": "0", "sSortDir_0": "asc", "iSortingCols": "1",
+        "sSearch": "",
+        "bRegex": "false",
+        "iSortCol_0": "0",
+        "sSortDir_0": "asc",
+        "iSortingCols": "1",
         "_": str(int(time.time() * 1000)),
     }
+    for i in range(8):
+        params[f"mDataProp_{i}"] = str(i)
+        params[f"sSearch_{i}"] = ""
+        params[f"bRegex_{i}"] = "false"
+        params[f"bSearchable_{i}"] = "true"
+        params[f"bSortable_{i}"] = "false" if i in (0, 7) else "true"
+    return params
 
 
 # ══════════════════════════════════════════════
-#  USERNAME VERIFY
-# ══════════════════════════════════════════════
-
-def verify_username(username: str) -> tuple[str | None, bool]:
-    s = _get_session()
-    if not s:
-        return None, False
-    try:
-        params = {
-            "sEcho": "1",
-            "iColumns": "8",
-            "sColumns": "%2C%2C%2C%2C%2C%2C%2C",
-            "iDisplayStart": "0",
-            "iDisplayLength": "1000",
-            **{f"mDataProp_{i}": str(i) for i in range(8)},
-            **{f"sSearch_{i}": "" for i in range(8)},
-            **{f"bRegex_{i}": "false" for i in range(8)},
-            **{f"bSearchable_{i}": "true" for i in range(8)},
-            **{f"bSortable_{i}": "false" if i in (0, 7) else "true" for i in range(8)},
-            "sSearch": "", "bRegex": "false",
-            "iSortCol_0": "0", "sSortDir_0": "asc", "iSortingCols": "1",
-            "_": str(int(time.time() * 1000)),
-        }
-        headers = {
-            "Referer": f"{LAMIX_URL}/ints/agent/Clients",
-            "X-Requested-With": "XMLHttpRequest",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-        }
-        resp = s.get(
-            f"{LAMIX_URL}/ints/agent/res/data_clients.php",
-            params=params,
-            headers=headers,
-            timeout=15,
-        )
-        print(f"[Verify] Clients API: {resp.status_code}")
-
-        # Session expire হলে re-login
-        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
-            print("[Verify] Session expired, re-logging in...")
-            s = _reset_session()
-            if not s:
-                return None, False
-            resp = s.get(
-                f"{LAMIX_URL}/ints/agent/res/data_clients.php",
-                params=params,
-                headers=headers,
-                timeout=15,
-            )
-
-        if resp.status_code != 200:
-            return None, False
-
-        data = resp.json()
-        rows = data.get("aaData", [])
-        print(f"[Verify] Clients found: {len(rows)}")
-
-        for row in rows:
-            row_username = str(row[1]).strip()
-            if row_username.lower() == username.lower():
-                inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
-                client_id = inp["value"] if inp else row_username
-                print(f"[Verify] ✅ Matched: {row_username}, client_id: {client_id}")
-                return client_id, True
-
-        print(f"[Verify] ❌ Not found: {username}")
-        return None, False
-
-    except Exception as e:
-        print(f"[Verify] Error: {e}")
-        return None, False
-
-
-async def verify_username_async(username: str) -> tuple[str | None, bool]:
-    return await asyncio.to_thread(verify_username, username)
-
-
-# ══════════════════════════════════════════════
-#  FETCH RANGES
+#  AVAILABLE CHECK
 # ══════════════════════════════════════════════
 
 def _is_available(client_cell: str) -> bool:
-    text = BeautifulSoup(client_cell, "html.parser").get_text(strip=True)
-    return text in ("", "/", "✏")
+    """Client column এ শুধু ✏ edit link থাকলে available"""
+    soup = BeautifulSoup(client_cell, "html.parser")
+    text = soup.get_text(strip=True)
+    # assigned হলে client নাম থাকবে, available হলে শুধু ✏ icon
+    return "allocate" in client_cell.lower() and text.strip() in ("", "✏", "/")
 
+
+# ══════════════════════════════════════════════
+#  COUNTRY CODE
+# ══════════════════════════════════════════════
 
 def _get_country_code(range_name: str) -> str:
     codes = {
-        "algeria": "213", "afghanistan": "93", "angola": "244",
-        "comoros": "269", "malaysia": "60", "oman": "968",
+        "malaysia": "60", "algeria": "213", "afghanistan": "93",
+        "angola": "244", "comoros": "269", "oman": "968",
         "nigeria": "234", "kenya": "254", "egypt": "20",
         "iraq": "964", "jordan": "962", "morocco": "212",
         "pakistan": "92", "saudi": "966", "tunisia": "216",
@@ -220,46 +142,59 @@ def _get_country_code(range_name: str) -> str:
     return ""
 
 
+# ══════════════════════════════════════════════
+#  FETCH RANGES
+# ══════════════════════════════════════════════
+
 def fetch_ranges() -> list[dict]:
     s = _get_session()
     if not s:
         return []
     try:
-        params = _base_params(echo="2", length=10000)
-        headers = {
-            "Referer": f"{LAMIX_URL}/ints/agent/Numbers",
-            "X-Requested-With": "XMLHttpRequest",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-        }
+        params = _numbers_params(echo="2", length=10000)
         resp = s.get(
             f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
             params=params,
-            headers=headers,
             timeout=30,
         )
 
-        if resp.status_code == 403 or "login" in resp.url.lower():
-            print("[Ranges] Session expired, re-logging in...")
+        # Session expired চেক
+        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
+            print("[Ranges] Session expired, re-login...")
             s = _reset_session()
             if not s:
                 return []
             resp = s.get(
                 f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
                 params=params,
-                headers=headers,
                 timeout=30,
             )
 
-        rows = resp.json().get("aaData", [])
+        data = resp.json()
+        rows = data.get("aaData", [])
+        print(f"[Ranges] Total rows: {len(rows)}")
+
         range_dict: dict[str, dict] = {}
 
         for row in rows:
-            range_name = str(row[0]).strip()
-            number     = str(row[2]).strip()
-            payout_raw = BeautifulSoup(str(row[3]), "html.parser").get_text(" ", strip=True) if len(row) > 3 else "Weekly $0.019"
-            payterm    = "Weekly" if "weekly" in payout_raw.lower() else payout_raw.split()[0]
-            payout     = next((p for p in payout_raw.split() if p.startswith("$")), "$0.019").replace("$", "")
-            client     = str(row[4]).strip() if len(row) > 4 else ""
+            if len(row) < 6:
+                continue
+
+            # Number ID (checkbox value)
+            inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
+            num_id = inp["value"] if inp else ""
+
+            range_name = str(row[1]).strip()
+            number     = str(row[3]).strip()
+
+            # Payout parse
+            payout_soup = BeautifulSoup(str(row[4]), "html.parser")
+            payout_text = payout_soup.get_text(" ", strip=True)
+            payterm = "Weekly" if "weekly" in payout_text.lower() else payout_text.split()[0]
+            payout  = next((p for p in payout_text.split() if p.startswith("$")), "$0.019").replace("$", "")
+
+            client_cell = str(row[5])
+            available   = _is_available(client_cell)
 
             if range_name not in range_dict:
                 range_dict[range_name] = {
@@ -270,15 +205,19 @@ def fetch_ranges() -> list[dict]:
                     "payterm": payterm,
                     "payout": payout,
                     "country_code": _get_country_code(range_name),
-                    "numbers": [],
+                    "numbers": [],      # available numbers
+                    "number_ids": [],   # available number IDs
                 }
 
             range_dict[range_name]["total"] += 1
-            if _is_available(client):
+            if available:
                 range_dict[range_name]["available"] += 1
                 range_dict[range_name]["numbers"].append(number)
+                range_dict[range_name]["number_ids"].append(num_id)
 
-        return [r for r in range_dict.values() if r["available"] > 0]
+        result = [r for r in range_dict.values() if r["available"] > 0]
+        print(f"[Ranges] Available ranges: {len(result)}")
+        return result
 
     except Exception as e:
         print(f"[Ranges] Error: {e}")
@@ -290,6 +229,71 @@ async def fetch_ranges_async() -> list[dict]:
 
 
 # ══════════════════════════════════════════════
+#  VERIFY USERNAME
+# ══════════════════════════════════════════════
+
+def verify_username(username: str) -> tuple[str | None, bool]:
+    s = _get_session()
+    if not s:
+        return None, False
+    try:
+        params = {
+            "sEcho": "1", "iColumns": "8",
+            "sColumns": "%2C%2C%2C%2C%2C%2C%2C",
+            "iDisplayStart": "0", "iDisplayLength": "1000",
+            "sSearch": "", "bRegex": "false",
+            "iSortCol_0": "0", "sSortDir_0": "asc", "iSortingCols": "1",
+            "_": str(int(time.time() * 1000)),
+        }
+        for i in range(8):
+            params[f"mDataProp_{i}"] = str(i)
+            params[f"sSearch_{i}"] = ""
+            params[f"bRegex_{i}"] = "false"
+            params[f"bSearchable_{i}"] = "true"
+            params[f"bSortable_{i}"] = "false" if i in (0, 7) else "true"
+
+        resp = s.get(
+            f"{LAMIX_URL}/ints/agent/res/data_clients.php",
+            params=params,
+            headers={"Referer": f"{LAMIX_URL}/ints/agent/Clients"},
+            timeout=15,
+        )
+
+        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
+            s = _reset_session()
+            if not s:
+                return None, False
+            resp = s.get(
+                f"{LAMIX_URL}/ints/agent/res/data_clients.php",
+                params=params,
+                headers={"Referer": f"{LAMIX_URL}/ints/agent/Clients"},
+                timeout=15,
+            )
+
+        rows = resp.json().get("aaData", [])
+        print(f"[Verify] Clients: {len(rows)}")
+
+        for row in rows:
+            row_username = str(row[1]).strip()
+            if row_username.lower() == username.lower():
+                inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
+                client_id = inp["value"] if inp else row_username
+                print(f"[Verify] ✅ Found: {row_username}, ID: {client_id}")
+                return client_id, True
+
+        print(f"[Verify] ❌ Not found: {username}")
+        return None, False
+
+    except Exception as e:
+        print(f"[Verify] Error: {e}")
+        return None, False
+
+
+async def verify_username_async(username: str) -> tuple[str | None, bool]:
+    return await asyncio.to_thread(verify_username, username)
+
+
+# ══════════════════════════════════════════════
 #  ALLOCATE NUMBERS
 # ══════════════════════════════════════════════
 
@@ -298,51 +302,53 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
     if not s:
         return None
     try:
-        params = _base_params(echo="3", length=10000)
-        params["frange"] = range_name
-        headers = {
-            "Referer": f"{LAMIX_URL}/ints/agent/Numbers",
-            "X-Requested-With": "XMLHttpRequest",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-        }
+        # Fresh data নিন ওই range এর জন্য
+        params = _numbers_params(echo="3", length=10000, frange=range_name)
         resp = s.get(
             f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
             params=params,
-            headers=headers,
             timeout=30,
         )
         rows = resp.json().get("aaData", [])
 
-        available_numbers, number_ids = [], []
+        # Available numbers collect করুন
+        available = []
         for row in rows:
-            client = str(row[4]).strip() if len(row) > 4 else ""
-            if _is_available(client):
-                number = str(row[2]).strip()
-                inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
-                num_id = inp["value"] if inp else ""
-                available_numbers.append(number)
-                number_ids.append(num_id)
-            if len(available_numbers) >= quantity:
+            if len(row) < 6:
+                continue
+            if not _is_available(str(row[5])):
+                continue
+            inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
+            num_id = inp["value"] if inp else ""
+            number = str(row[3]).strip()
+            if num_id and number:
+                available.append((num_id, number))
+            if len(available) >= quantity:
                 break
 
-        if len(available_numbers) < quantity:
-            return {"status": "failed", "numbers": []}
+        print(f"[Allocate] Available for '{range_name}': {len(available)}, requested: {quantity}")
 
+        if len(available) < quantity:
+            return {"status": "failed", "numbers": [], "reason": f"Only {len(available)} available"}
+
+        # Assign করুন
         assigned = []
-        for num_id, number in zip(number_ids[:quantity], available_numbers[:quantity]):
+        for num_id, number in available[:quantity]:
             try:
                 r = s.post(
                     f"{LAMIX_URL}/ints/agent/Numbers",
                     data={"action": "assign", "eid": num_id, "client_id": client_id},
+                    headers={"Referer": f"{LAMIX_URL}/ints/agent/Numbers"},
                     timeout=15,
                 )
+                print(f"[Allocate] {number} → status {r.status_code}")
                 if r.status_code == 200:
                     assigned.append(number)
             except Exception as e:
                 print(f"[Allocate] Error [{number}]: {e}")
 
         if not assigned:
-            return {"status": "failed", "numbers": []}
+            return {"status": "failed", "numbers": [], "reason": "Assign failed"}
 
         return {"status": "success", "numbers": assigned}
 
@@ -353,4 +359,3 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
 
 async def allocate_numbers_async(client_id: str, range_name: str, quantity: int) -> dict | None:
     return await asyncio.to_thread(allocate_numbers, client_id, range_name, quantity)
-    
