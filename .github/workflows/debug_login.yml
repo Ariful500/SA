@@ -1,0 +1,26 @@
+name: Debug Login Test
+
+on:
+  workflow_dispatch:  # manually চালাতে হবে
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 python-dotenv
+
+      - name: Run Debug Login
+        env:
+          LAMIX_URL: ${{ secrets.LAMIX_URL }}
+          LAMIX_USERNAME: ${{ secrets.LAMIX_USERNAME }}
+          LAMIX_PASSWORD: ${{ secrets.LAMIX_PASSWORD }}
+        run: python debug_login.py
+        
