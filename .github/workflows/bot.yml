@@ -30,24 +30,20 @@ jobs:
           echo "LAMIX_USERNAME=${{ secrets.LAMIX_USERNAME }}" >> .env
           echo "LAMIX_PASSWORD=${{ secrets.LAMIX_PASSWORD }}" >> .env
 
-      - name: Restore users.json (আগের data লোড)
+      - name: Setup git for auto-save
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Restore users.json
         run: |
           if [ ! -f users.json ]; then
             echo "{}" > users.json
             echo "users.json নতুন তৈরি হয়েছে।"
           else
-            echo "users.json আগের data পাওয়া গেছে ✅"
+            echo "✅ আগের users.json পাওয়া গেছে!"
           fi
 
       - name: Run bot
         run: python bot.py
-
-      - name: Save users.json (bot বন্ধ হলে data সেভ)
-        if: always()
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git pull origin main --rebase
-          git add users.json
-          git diff --staged --quiet || git commit -m "💾 Auto-save: users data updated"
-          git push origin main
+        
