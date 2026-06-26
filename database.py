@@ -1,13 +1,39 @@
 """
-database.py — JSON ফাইল ভিত্তিক ডেটাবেস (GitHub Actions compatible)
+database.py — JSON ফাইল ভিত্তিক ডেটাবেস (real-time git save)
 """
 import json
 import os
 import asyncio
+import subprocess
 from datetime import datetime
 from config import DAILY_LIMIT
 
 DB_FILE = "users.json"
+
+
+# ══════════════════════════════════════════════
+#  GIT SAVE (real-time commit + push)
+# ══════════════════════════════════════════════
+
+def _git_save(message: str = "💾 Auto-save: users data updated"):
+    """প্রতিটা পরিবর্তনের পর git commit + push করে"""
+    try:
+        subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
+        subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
+        subprocess.run(["git", "pull", "origin", "main", "--rebase"], check=False)
+        subprocess.run(["git", "add", DB_FILE], check=False)
+        result = subprocess.run(
+            ["git", "diff", "--staged", "--quiet"],
+            capture_output=True
+        )
+        if result.returncode != 0:  # পরিবর্তন আছে
+            subprocess.run(["git", "commit", "-m", message], check=False)
+            subprocess.run(["git", "push", "origin", "main"], check=False)
+            print(f"[DB] ✅ Git saved: {message}")
+        else:
+            print("[DB] No changes to save.")
+    except Exception as e:
+        print(f"[DB] Git save error: {e}")
 
 
 # ══════════════════════════════════════════════
@@ -24,18 +50,20 @@ def _load() -> dict:
         return {}
 
 
-def _save(data: dict):
+def _save(data: dict, git_message: str = "💾 Auto-save: users data updated"):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    _git_save(git_message)
 
 
 # ══════════════════════════════════════════════
-#  INIT (SQLite এর মতো compatibility রাখা)
+#  INIT
 # ══════════════════════════════════════════════
 
 async def init_db():
     if not os.path.exists(DB_FILE):
-        _save({})
+        with open(DB_FILE, "w") as f:
+            json.dump({}, f)
 
 
 # ══════════════════════════════════════════════
@@ -77,7 +105,7 @@ async def add_user(user_id: int, telegram_username: str, lamix_username: str, cl
             "is_banned": False,
             "created_at": datetime.now().isoformat(),
         }
-        _save(data)
+        _save(data, f"👤 New user linked: {lamix_username}")
     await asyncio.to_thread(_do)
 
 
@@ -89,7 +117,7 @@ async def unlink_user(user_id: int):
     def _do():
         data = _load()
         data.pop(str(user_id), None)
-        _save(data)
+        _save(data, "❌ User unlinked")
     await asyncio.to_thread(_do)
 
 
@@ -104,7 +132,7 @@ async def update_usage(user_id: int, quantity: int):
         if uid in data:
             data[uid]["daily_used"] += quantity
             data[uid]["total_allocated"] += quantity
-            _save(data)
+            _save(data, f"📊 Usage updated: {quantity} numbers allocated")
     await asyncio.to_thread(_do)
 
 
@@ -118,7 +146,7 @@ async def reset_all_limits() -> int:
         for uid in data:
             data[uid]["daily_used"] = 0
             data[uid]["daily_limit"] = DAILY_LIMIT
-        _save(data)
+        _save(data, "🔄 All limits reset")
         return len(data)
     return await asyncio.to_thread(_do)
 
@@ -134,7 +162,7 @@ async def reset_user_limit(user_id: int):
         if uid in data:
             data[uid]["daily_used"] = 0
             data[uid]["daily_limit"] = DAILY_LIMIT
-            _save(data)
+            _save(data, f"🔄 User limit reset: {uid}")
     await asyncio.to_thread(_do)
 
 
@@ -148,7 +176,7 @@ async def add_user_limit(user_id: int, amount: int):
         uid = str(user_id)
         if uid in data:
             data[uid]["daily_limit"] += amount
-            _save(data)
+            _save(data, f"➕ Limit added: {amount} for {uid}")
     await asyncio.to_thread(_do)
 
 
@@ -162,7 +190,7 @@ async def ban_user(user_id: int):
         uid = str(user_id)
         if uid in data:
             data[uid]["is_banned"] = True
-            _save(data)
+            _save(data, f"🚫 User banned: {uid}")
     await asyncio.to_thread(_do)
 
 
@@ -172,7 +200,7 @@ async def unban_user(user_id: int):
         uid = str(user_id)
         if uid in data:
             data[uid]["is_banned"] = False
-            _save(data)
+            _save(data, f"✅ User unbanned: {uid}")
     await asyncio.to_thread(_do)
 
 
