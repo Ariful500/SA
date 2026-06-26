@@ -6,9 +6,10 @@ import os
 import asyncio
 import subprocess
 from datetime import datetime
-from config import DAILY_LIMIT
+from config import DAILY_LIMIT as _DEFAULT_DAILY_LIMIT, MAX_PER_ORDER as _DEFAULT_MAX_PER_ORDER
 
 DB_FILE = "users.json"
+SETTINGS_FILE = "settings.json"
 
 
 # ══════════════════════════════════════════════
@@ -56,6 +57,35 @@ def _save(data: dict, git_message: str = "💾 Auto-save: users data updated"):
     _git_save(git_message)
 
 
+def _load_settings() -> dict:
+    if not os.path.exists(SETTINGS_FILE):
+        return {}
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_settings(settings: dict, git_message: str = "⚙️ Settings updated"):
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(settings, f, ensure_ascii=False, indent=2)
+    try:
+        subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
+        subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
+        subprocess.run(["git", "pull", "origin", "main", "--rebase"], check=False)
+        subprocess.run(["git", "add", SETTINGS_FILE], check=False)
+        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
+        if result.returncode != 0:
+            subprocess.run(["git", "commit", "-m", git_message], check=False)
+            subprocess.run(["git", "push", "origin", "main"], check=False)
+            print(f"[Settings] ✅ Git saved: {git_message}")
+        else:
+            print("[Settings] No changes to save.")
+    except Exception as e:
+        print(f"[Settings] Git save error: {e}")
+
+
 # ══════════════════════════════════════════════
 #  INIT
 # ══════════════════════════════════════════════
@@ -64,6 +94,57 @@ async def init_db():
     if not os.path.exists(DB_FILE):
         with open(DB_FILE, "w") as f:
             json.dump({}, f)
+    if not os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump({
+                "daily_limit": _DEFAULT_DAILY_LIMIT,
+                "max_per_order": _DEFAULT_MAX_PER_ORDER,
+            }, f, indent=2)
+
+
+# ══════════════════════════════════════════════
+#  SETTINGS (Daily Limit / Max Per Order)
+#  config.py এর ডিফল্ট ভ্যালুর বদলে এখন settings.json থেকে
+#  রানটাইম ভ্যালু লোড হয়, যাতে /fetchlimit বাটন দিয়ে বদলালে
+#  bot restart হলেও মান টিকে থাকে।
+# ══════════════════════════════════════════════
+
+async def get_daily_limit() -> int:
+    settings = await asyncio.to_thread(_load_settings)
+    return settings.get("daily_limit", _DEFAULT_DAILY_LIMIT)
+
+
+async def get_max_per_order() -> int:
+    settings = await asyncio.to_thread(_load_settings)
+    return settings.get("max_per_order", _DEFAULT_MAX_PER_ORDER)
+
+
+async def set_daily_limit(new_limit: int) -> int:
+    """
+    নতুন Daily Limit সেট করে এবং সবার (পুরনো ইউজার সহ) বর্তমান
+    daily_limit এখনই নতুন ভ্যালুতে আপডেট করে দেয়। কতজন ইউজার
+    আপডেট হলো তা রিটার্ন করে।
+    """
+    def _do():
+        settings = _load_settings()
+        settings["daily_limit"] = new_limit
+        _save_settings(settings, f"⚙️ Daily limit changed to {new_limit}")
+
+        data = _load()
+        for uid in data:
+            data[uid]["daily_limit"] = new_limit
+        _save(data, f"⚙️ Daily limit applied to all users: {new_limit}")
+        return len(data)
+    return await asyncio.to_thread(_do)
+
+
+async def set_max_per_order(new_max: int):
+    """নতুন Max Per Order সেট করে। পরের অর্ডার থেকেই কার্যকর হবে।"""
+    def _do():
+        settings = _load_settings()
+        settings["max_per_order"] = new_max
+        _save_settings(settings, f"⚙️ Max per order changed to {new_max}")
+    await asyncio.to_thread(_do)
 
 
 # ══════════════════════════════════════════════
@@ -115,6 +196,8 @@ async def is_username_taken(username: str) -> bool:
 # ══════════════════════════════════════════════
 
 async def add_user(user_id: int, telegram_username: str, lamix_username: str, client_id: str):
+    current_limit = await get_daily_limit()
+
     def _do():
         data = _load()
         data[str(user_id)] = {
@@ -123,7 +206,7 @@ async def add_user(user_id: int, telegram_username: str, lamix_username: str, cl
             "telegram_username": telegram_username,
             "client_id": client_id,
             "daily_used": 0,
-            "daily_limit": DAILY_LIMIT,
+            "daily_limit": current_limit,
             "total_allocated": 0,
             "is_banned": False,
             "created_at": datetime.now().isoformat(),
@@ -164,11 +247,13 @@ async def update_usage(user_id: int, quantity: int):
 # ══════════════════════════════════════════════
 
 async def reset_all_limits() -> int:
+    current_limit = await get_daily_limit()
+
     def _do():
         data = _load()
         for uid in data:
             data[uid]["daily_used"] = 0
-            data[uid]["daily_limit"] = DAILY_LIMIT
+            data[uid]["daily_limit"] = current_limit
         _save(data, "🔄 All limits reset")
         return len(data)
     return await asyncio.to_thread(_do)
@@ -179,12 +264,14 @@ async def reset_all_limits() -> int:
 # ══════════════════════════════════════════════
 
 async def reset_user_limit(user_id: int):
+    current_limit = await get_daily_limit()
+
     def _do():
         data = _load()
         uid = str(user_id)
         if uid in data:
             data[uid]["daily_used"] = 0
-            data[uid]["daily_limit"] = DAILY_LIMIT
+            data[uid]["daily_limit"] = current_limit
             _save(data, f"🔄 User limit reset: {uid}")
     await asyncio.to_thread(_do)
 
