@@ -277,6 +277,49 @@ async def reset_user_limit(user_id: int):
 
 
 # ══════════════════════════════════════════════
+#  RESET USER USAGE ONLY (limit অপরিবর্তিত থাকে)
+#  Individual "Request Limit Reset" approve করার জন্য —
+#  ইউজারের কাস্টম daily_limit (যেমন /addlimit দিয়ে সেট করা)
+#  না বদলে শুধু আজকের ব্যবহার (daily_used) শূন্য করে।
+#  রিটার্ন করে ইউজারের (অপরিবর্তিত) daily_limit।
+# ══════════════════════════════════════════════
+
+async def reset_user_usage(user_id: int) -> int | None:
+    def _do():
+        data = _load()
+        uid = str(user_id)
+        if uid in data:
+            data[uid]["daily_used"] = 0
+            _save(data, f"🔄 User usage reset (limit unchanged): {uid}")
+            return data[uid]["daily_limit"]
+        return None
+    return await asyncio.to_thread(_do)
+
+
+# ══════════════════════════════════════════════
+#  PENDING RESET REQUEST FLAG
+#  "Request Limit Reset" বাটনে একবারে একটাই পেন্ডিং রিকোয়েস্ট
+#  রাখার জন্য — Admin approve/deny না করা পর্যন্ত নতুন
+#  রিকোয়েস্ট পাঠানো ব্লক করতে এই ফ্ল্যাগ ব্যবহার হয়।
+# ══════════════════════════════════════════════
+
+async def has_pending_reset_request(user_id: int) -> bool:
+    data = await asyncio.to_thread(_load)
+    user = data.get(str(user_id))
+    return bool(user and user.get("pending_reset_request"))
+
+
+async def set_pending_reset_request(user_id: int, pending: bool):
+    def _do():
+        data = _load()
+        uid = str(user_id)
+        if uid in data:
+            data[uid]["pending_reset_request"] = pending
+            _save(data, f"🔔 Pending reset request flag set to {pending} for {uid}")
+    await asyncio.to_thread(_do)
+
+
+# ══════════════════════════════════════════════
 #  ADD USER LIMIT
 # ══════════════════════════════════════════════
 
