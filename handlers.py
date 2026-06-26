@@ -537,4 +537,156 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠️ কোনো অ্যাকাউন্ট লিঙ্ক নেই।")
             return
         keyboard = [[
-       
+            InlineKeyboardButton("✅ Confirm", callback_data="confirm_unlink"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+        ]]
+        await query.edit_message_text(
+            f"⚠️ *{user['username']}* আনলিঙ্ক করবেন?",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
+    # ── Confirm Unlink ──
+    if data == "confirm_unlink":
+        await unlink_user(user_id)
+        await query.edit_message_text("✅ অ্যাকাউন্ট আনলিঙ্ক হয়েছে।")
+        return
+
+    # ── Browse Ranges ──
+    if data == "add_nums":
+        if not user:
+            await query.edit_message_text("⚠️ /link দিয়ে আগে লিঙ্ক করুন।")
+            return
+        if user["is_banned"]:
+            await query.edit_message_text("🚫 আপনি ব্যান হয়েছেন।")
+            return
+        if user["daily_used"] >= user["daily_limit"]:
+            keyboard = [[InlineKeyboardButton("🔄 Request Limit Reset", callback_data="request_reset")]]
+            await query.edit_message_text(
+                f"⚠️ *Daily Limit Exceeded!*\nআজকের লিমিট শেষ।",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            return
+        await _show_ranges(update, context, page=0)
+        return
+
+    # ── Range Page ──
+    if data.startswith("range_page_"):
+        await _show_ranges(update, context, page=int(data.split("_")[-1]))
+        return
+
+    # ── Search Page ──
+    if data.startswith("search_page_"):
+        q = context.user_data.get("search_query", "")
+        await _show_search_results(update, context, q, page=int(data.split("_")[-1]))
+        return
+
+    # ── Range Selected ──
+    if data.startswith("range_"):
+        range_id = data[len("range_"):]
+        ranges = await lamix.fetch_ranges_async()
+        selected = next((r for r in ranges if str(r["id"]) == range_id), None)
+        if not selected:
+            await query.edit_message_text("❌ রেঞ্জ পাওয়া যায়নি।")
+            return
+        context.user_data["selected_range"] = selected
+        context.user_data["waiting_for_quantity"] = True
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
+        await query.edit_message_text(
+            f"📦 *{selected['name']}*\n"
+            f"Available: {selected.get('available', 0)} ✅\n\n"
+            f"🔢 কতটি নম্বর চান? (১–{MAX_PER_ORDER})\n"
+            f"সংখ্যা পাঠান:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
+    # ── Limit Reset Request ──
+    if data == "request_reset":
+        if not user:
+            return
+        keyboard = [[
+            InlineKeyboardButton("✅ Approve", callback_data=f"approve_reset_{user_id}"),
+            InlineKeyboardButton("❌ Deny", callback_data=f"deny_reset_{user_id}"),
+        ]]
+        tg_uname = f"@{update.effective_user.username}" if update.effective_user.username else str(user_id)
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"🔔 *Limit Reset Request!*\n\n👤 {tg_uname}\n🆔 `{user_id}`\n📊 {user['daily_used']}/{user['daily_limit']}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        await query.edit_message_text("✅ রিকোয়েস্ট পাঠানো হয়েছে!")
+        return
+
+    # ── Admin Approve/Deny ──
+    if data.startswith("approve_reset_") or data.startswith("deny_reset_"):
+        if user_id != ADMIN_ID:
+            await query.answer("🚫 শুধু অ্যাডমিন পারবেন।")
+            return
+        parts = data.split("_")
+        action = parts[0]          # approve / deny
+        target_id = int(parts[-1])
+        if action == "approve":
+            await reset_user_limit(target_id)
+            await context.bot.send_message(
+                chat_id=target_id,
+                text=f"✅ *Limit Reset!*\n\nআপনার লিমিট {DAILY_LIMIT} হয়েছে।",
+                parse_mode="Markdown",
+            )
+            await query.edit_message_text(query.message.text + "\n\n✅ *Approved!*", parse_mode="Markdown")
+        else:
+            await context.bot.send_message(chat_id=target_id, text="❌ Limit Reset Request Deny করা হয়েছে।")
+            await query.edit_message_text(query.message.text + "\n\n❌ *Denied!*", parse_mode="Markdown")
+        return
+
+    # ── Range Request ──
+    if data.startswith("request_range_"):
+        range_name = data[len("request_range_"):]
+        tg_uname = f"@{update.effective_user.username}" if update.effective_user.username else str(user_id)
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"🔔 *Range Request!*\n\n👤 {tg_uname}\n🆔 `{user_id}`\n📦 *{range_name}*",
+            parse_mode="Markdown",
+        )
+        await query.edit_message_text("✅ রেঞ্জ রিকোয়েস্ট পাঠানো হয়েছে!")
+        return
+
+    # ── Add Country Code ──
+    if data.startswith("add_code_"):
+        code = data[len("add_code_"):]
+        numbers_text = context.user_data.get("last_numbers", "")
+        lines = [f"+{code}{l.strip()}" for l in numbers_text.strip().split("\n") if l.strip()]
+        context.user_data["last_numbers"] = "\n".join(lines)
+        nums_md = "\n".join([f"`{n}`" for n in lines])
+        keyboard = [[InlineKeyboardButton("➖ Remove Country Code", callback_data=f"remove_code_{code}")]]
+        await query.message.reply_text(
+            f"📱 *Numbers ({len(lines)}):*\n\n{nums_md}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
+    # ── Remove Country Code ──
+    if data.startswith("remove_code"):
+        numbers_text = context.user_data.get("last_numbers", "")
+        code = context.user_data.get("country_code", "")
+        lines = []
+        for l in numbers_text.strip().split("\n"):
+            l = l.strip()
+            if l.startswith(f"+{code}"):
+                lines.append(l[len(code)+1:])
+            else:
+                lines.append(l)
+        context.user_data["last_numbers"] = "\n".join(lines)
+        nums_md = "\n".join([f"`{n}`" for n in lines])
+        keyboard = [[InlineKeyboardButton(f"➕ Add Country Code (+{code})", callback_data=f"add_code_{code}")]]
+        await query.message.reply_text(
+            f"📱 *Numbers ({len(lines)}):*\n\n{nums_md}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
