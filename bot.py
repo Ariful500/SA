@@ -77,29 +77,16 @@ async def post_init(app: Application):
     await app.bot.set_my_commands(_USER_CMDS)
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
 
-    # বট start হওয়ার সাথে সাথে Lamix এ login করো
-    import asyncio
+    # bot start হওয়ার সাথে সাথে Lamix login
     session = await asyncio.to_thread(lamix._do_login)
     if session:
-        logger.info("✅ Lamix Login সফল হয়েছে!")
-        await app.bot.send_message(
-            chat_id=ADMIN_ID,
-            text="✅ *Bot চালু হয়েছে!*
-
-🔐 Lamix Login সফল।",
-            parse_mode="Markdown",
-        )
+        logger.info("Lamix Login OK")
+        await app.bot.send_message(chat_id=ADMIN_ID, text="Bot চালু! Lamix Login সফল।")
     else:
-        logger.error("❌ Lamix Login ব্যর্থ হয়েছে!")
-        await app.bot.send_message(
-            chat_id=ADMIN_ID,
-            text="❌ *Lamix Login ব্যর্থ হয়েছে!*
+        logger.error("Lamix Login Failed")
+        await app.bot.send_message(chat_id=ADMIN_ID, text="Lamix Login ব্যর্থ! Username/Password চেক করুন।")
 
-Username/Password চেক করুন।",
-            parse_mode="Markdown",
-        )
-
-    logger.info("✅ DB ও Commands initialized")
+    logger.info("DB & Commands initialized")
 
 
 # ══════════════════════════════════════════════
@@ -146,3 +133,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
