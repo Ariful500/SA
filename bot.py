@@ -14,6 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from config import BOT_TOKEN, ADMIN_ID, LIMIT_RESET_HOUR, DAILY_LIMIT
+import lamix
 from database import init_db, reset_all_limits
 from handlers import (
     # user
@@ -75,6 +76,29 @@ async def post_init(app: Application):
     await init_db()
     await app.bot.set_my_commands(_USER_CMDS)
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
+
+    # বট start হওয়ার সাথে সাথে Lamix এ login করো
+    import asyncio
+    session = await asyncio.to_thread(lamix._do_login)
+    if session:
+        logger.info("✅ Lamix Login সফল হয়েছে!")
+        await app.bot.send_message(
+            chat_id=ADMIN_ID,
+            text="✅ *Bot চালু হয়েছে!*
+
+🔐 Lamix Login সফল।",
+            parse_mode="Markdown",
+        )
+    else:
+        logger.error("❌ Lamix Login ব্যর্থ হয়েছে!")
+        await app.bot.send_message(
+            chat_id=ADMIN_ID,
+            text="❌ *Lamix Login ব্যর্থ হয়েছে!*
+
+Username/Password চেক করুন।",
+            parse_mode="Markdown",
+        )
+
     logger.info("✅ DB ও Commands initialized")
 
 
@@ -122,4 +146,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
