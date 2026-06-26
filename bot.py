@@ -17,16 +17,15 @@ from apscheduler.triggers.cron import CronTrigger
 from config import BOT_TOKEN, ADMIN_ID, LIMIT_RESET_HOUR, DAILY_LIMIT
 import lamix
 from database import init_db, reset_all_limits, get_daily_limit
-from handlers import (
-    # user
+from user_commands import (
     start_command, link_command, unlink_command,
-    account_command, cancel_command, handle_text,
-    # admin
+    account_command, cancel_command, add_nums_command,
+)
+from callbacks import handle_text, handle_callback
+from admin_commands import (
     refresh_command, addlimit_command, leaderboard_command,
     fetchlimit_command, broadcast_command, ban_command,
     unban_command, userlist_command, reset_command,
-    # allocation
-    add_nums_command, handle_callback,
 )
 
 logging.basicConfig(
