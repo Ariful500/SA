@@ -129,24 +129,70 @@ def _is_available(client_cell: str) -> bool:
 #  COUNTRY CODE
 # ══════════════════════════════════════════════
 
+_COUNTRY_CODES = {
+    "afghanistan": "93", "albania": "355", "algeria": "213", "united states": "1",
+    "andorra": "376", "angola": "244", "antigua and barbuda": "1", "argentina": "54",
+    "armenia": "374", "australia": "61", "austria": "43", "azerbaijan": "994",
+    "bahamas": "1", "bahrain": "973", "bangladesh": "880", "barbados": "1",
+    "belarus": "375", "belgium": "32", "belize": "501", "benin": "229",
+    "bhutan": "975", "bolivia": "591", "bosnia and herzegovina": "387", "bosnia": "387",
+    "botswana": "267", "brazil": "55", "brunei": "673", "bulgaria": "359",
+    "burkina faso": "226", "burundi": "257", "cambodia": "855", "cameroon": "237",
+    "canada": "1", "cape verde": "238", "central african republic": "236", "chad": "235",
+    "chile": "56", "china": "86", "colombia": "57", "comoros": "269",
+    "dr congo": "243", "democratic republic of congo": "243", "congo": "242",
+    "costa rica": "506", "croatia": "385", "cuba": "53", "cyprus": "357",
+    "czech republic": "420", "czechia": "420", "denmark": "45", "djibouti": "253",
+    "dominica": "1", "dominican republic": "1", "ecuador": "593", "egypt": "20",
+    "el salvador": "503", "equatorial guinea": "240", "eritrea": "291",
+    "estonia": "372", "ethiopia": "251", "eswatini": "268", "fiji": "679",
+    "finland": "358", "france": "33", "gabon": "241", "gambia": "220",
+    "georgia": "995", "germany": "49", "ghana": "233", "greece": "30",
+    "grenada": "1", "guatemala": "502", "guinea-bissau": "245", "guinea bissau": "245",
+    "guinea": "224", "guyana": "592", "haiti": "509", "honduras": "504",
+    "hungary": "36", "iceland": "354", "india": "91", "indonesia": "62",
+    "iran": "98", "iraq": "964", "ireland": "353", "israel": "972",
+    "italy": "39", "ivory coast": "225", "cote d'ivoire": "225", "jamaica": "1",
+    "japan": "81", "jordan": "962", "kazakhstan": "7", "kenya": "254",
+    "kiribati": "686", "north korea": "850", "south korea": "82", "korea": "82",
+    "kuwait": "965", "kyrgyzstan": "996", "laos": "856", "latvia": "371",
+    "lebanon": "961", "lesotho": "266", "liberia": "231", "libya": "218",
+    "liechtenstein": "423", "lithuania": "370", "luxembourg": "352", "madagascar": "261",
+    "malawi": "265", "malaysia": "60", "maldives": "960", "mali": "223",
+    "malta": "356", "marshall islands": "692", "mauritania": "222", "mauritius": "230",
+    "mexico": "52", "micronesia": "691", "moldova": "373", "monaco": "377",
+    "mongolia": "976", "montenegro": "382", "morocco": "212", "mozambique": "258",
+    "myanmar": "95", "namibia": "264", "nauru": "674", "nepal": "977",
+    "netherlands": "31", "new zealand": "64", "nicaragua": "505", "nigeria": "234",
+    "niger": "227", "norway": "47", "oman": "968", "pakistan": "92",
+    "palau": "680", "palestine": "970", "panama": "507", "papua new guinea": "675",
+    "paraguay": "595", "peru": "51", "philippines": "63", "poland": "48",
+    "portugal": "351", "qatar": "974", "romania": "40", "russia": "7",
+    "rwanda": "250", "saint kitts and nevis": "1", "saint lucia": "1",
+    "saint vincent and the grenadines": "1", "samoa": "685", "san marino": "378",
+    "sao tome and principe": "239", "saudi arabia": "966", "saudi": "966",
+    "senegal": "221", "serbia": "381", "seychelles": "248", "sierra leone": "232",
+    "singapore": "65", "slovakia": "421", "slovenia": "386", "solomon islands": "677",
+    "somalia": "252", "south africa": "27", "spain": "34", "sri lanka": "94",
+    "sudan": "249", "suriname": "597", "sweden": "46", "switzerland": "41",
+    "syria": "963", "taiwan": "886", "tajikistan": "992", "tanzania": "255",
+    "thailand": "66", "timor-leste": "670", "timor leste": "670", "togo": "228",
+    "tonga": "676", "trinidad and tobago": "1", "tunisia": "216", "turkey": "90",
+    "turkmenistan": "993", "tuvalu": "688", "uganda": "256", "ukraine": "380",
+    "united arab emirates": "971", "uae": "971", "united kingdom": "44", "uk": "44",
+    "uruguay": "598", "uzbekistan": "998", "vanuatu": "678", "vatican city": "379",
+    "venezuela": "58", "vietnam": "84", "yemen": "967", "zambia": "260",
+    "zimbabwe": "263",
+}
+
+
 def _get_country_code(range_name: str) -> str:
-    codes = {
-        "malaysia": "60", "algeria": "213", "afghanistan": "93",
-        "angola": "244", "comoros": "269", "oman": "968",
-        "nigeria": "234", "kenya": "254", "egypt": "20",
-        "iraq": "964", "jordan": "962", "morocco": "212",
-        "pakistan": "92", "saudi": "966", "tunisia": "216",
-        "uganda": "256", "ukraine": "380", "uzbekistan": "998",
-        "vietnam": "84", "zimbabwe": "263", "myanmar": "95",
-        "nepal": "977", "indonesia": "62", "ethiopia": "251",
-        "cameroon": "237", "tanzania": "255", "sudan": "249",
-        "syria": "963", "russia": "7", "georgia": "995",
-        "kazakhstan": "7", "bangladesh": "880", "sri lanka": "94",
-    }
     name = range_name.lower()
-    for country, code in codes.items():
+    # দীর্ঘ নাম আগে চেক করা হয় (substring conflict এড়াতে, যেমন:
+    # "niger" "nigeria"-র মধ্যে আছে, "congo" "dr congo"-র মধ্যে আছে)
+    for country in sorted(_COUNTRY_CODES.keys(), key=len, reverse=True):
         if country in name:
-            return code
+            return _COUNTRY_CODES[country]
     return ""
 
 
@@ -376,44 +422,78 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
         mysms_referer = f"{LAMIX_URL}/ints/agent/MySMSNumbers?fclient=&frange="
 
         for num_id, number, payterm_val in available[:quantity]:
-            try:
-                alloc_resp = s.post(
-                    f"{LAMIX_URL}/ints/agent/MySMSNumbers",
-                    params={"fclient": "", "frange": ""},
-                    data={
-                        "action":  "allocate",
-                        "id":      num_id,
-                        "frange":  "",
-                        "fclient": "",
-                        "client":  client_id,
-                        "payterm": payterm_val,
-                        "payout":  "0",
-                    },
-                    headers={
-                        # browser capture-এ এই request টা plain form submit ছিল,
-                        # XHR না — তাই AJAX headers override করে বাদ দেওয়া হলো
-                        "X-Requested-With": None,
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        "Content-Type": "application/x-www-form-urlencoded",
-                        "Referer": mysms_referer,
-                        "Origin": LAMIX_URL,
-                        "Upgrade-Insecure-Requests": "1",
-                    },
-                    timeout=15,
-                    allow_redirects=False,  # 302 ধরার জন্য, follow করব না
-                )
-                print(f"[Allocate] Assign {number} (id:{num_id}) → {alloc_resp.status_code}")
-                print(f"[Allocate] Location: {alloc_resp.headers.get('Location', '')}")
+            success = False
+            for attempt in range(2):  # প্রথমবার fail হলে re-login করে একবার retry
+                try:
+                    alloc_resp = s.post(
+                        f"{LAMIX_URL}/ints/agent/MySMSNumbers",
+                        params={"fclient": "", "frange": ""},
+                        data={
+                            "action":  "allocate",
+                            "id":      num_id,
+                            "frange":  "",
+                            "fclient": "",
+                            "client":  client_id,
+                            "payterm": payterm_val,
+                            "payout":  "0",
+                        },
+                        headers={
+                            # browser capture-এ এই request টা plain form submit ছিল,
+                            # XHR না — তাই AJAX headers override করে বাদ দেওয়া হলো
+                            "X-Requested-With": None,
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                            "Content-Type": "application/x-www-form-urlencoded",
+                            "Referer": mysms_referer,
+                            "Origin": LAMIX_URL,
+                            "Upgrade-Insecure-Requests": "1",
+                        },
+                        timeout=15,
+                        allow_redirects=False,  # 302 ধরার জন্য, follow করব না
+                    )
+                    print(f"[Allocate] Assign {number} (id:{num_id}) → {alloc_resp.status_code}")
 
-                # ✅ Success signal = 302 redirect (capture-এ এটাই দেখা গেছে)
-                # কিছু সার্ভার configuration এ 200 ও আসতে পারে, তাই দুটোই allow
-                if alloc_resp.status_code in (302, 200):
-                    assigned.append(number)
-                else:
-                    print(f"[Allocate] Unexpected status for {number}: {alloc_resp.status_code}")
+                    if alloc_resp.status_code in (401, 403) or "login" in alloc_resp.headers.get("Location", "").lower():
+                        print(f"[Allocate] Session invalid for {number}, re-login...")
+                        s = _reset_session()
+                        if not s:
+                            break
+                        continue  # retry এই number এর জন্য
 
-            except Exception as e:
-                print(f"[Allocate] Error [{number}]: {e}")
+                    if alloc_resp.status_code == 302:
+                        # ✅ Browser যেমন redirect follow করে পরের পেজ GET করে নেয়,
+                        # সেটাই এখানে করা হচ্ছে — কারণ Network capture-এ দেখা গেছে
+                        # POST এর পরপরই MySMSNumbers পেজের একটা GET request আসে।
+                        # এটা না করলে সার্ভার সেশনে আগের request টা "pending" থেকে
+                        # যায় বলে মনে হচ্ছে, যেটার কারণে ২য়/৩য় নম্বর fail করে।
+                        location = alloc_resp.headers.get("Location", mysms_referer)
+                        if location.startswith("/"):
+                            location = f"{LAMIX_URL}{location}"
+                        elif not location.startswith("http"):
+                            location = f"{LAMIX_URL}/ints/agent/{location}"
+                        try:
+                            s.get(location, headers={"Referer": mysms_referer}, timeout=15)
+                        except Exception as e:
+                            print(f"[Allocate] Follow-up GET error: {e}")
+                        success = True
+                        break
+                    elif alloc_resp.status_code == 200:
+                        success = True
+                        break
+                    else:
+                        print(f"[Allocate] Unexpected status for {number}: {alloc_resp.status_code}")
+                        break
+
+                except Exception as e:
+                    print(f"[Allocate] Error [{number}]: {e}")
+                    break
+
+            if success:
+                assigned.append(number)
+
+            # পরপর রিকোয়েস্টে rate-limit/session সমস্যা এড়াতে ছোট delay
+            time.sleep(0.5)
+
+        print(f"[Allocate] Final result: {len(assigned)}/{quantity} assigned")
 
         if not assigned:
             return {"status": "failed", "numbers": [], "reason": "All assign requests failed"}
