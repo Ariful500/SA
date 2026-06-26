@@ -1,9 +1,10 @@
 """
-debug_login.py — Lamix Login ধাপে ধাপে চেক করার স্ক্রিপ্ট
-চালানো: python debug_login.py
+debug_allocate.py — Allocate API টেস্ট করার স্ক্রিপ্ট
+চালানো: python debug_allocate.py
 """
 import re
 import os
+import time
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -13,166 +14,167 @@ load_dotenv()
 LAMIX_URL      = os.getenv("LAMIX_URL", "http://51.210.208.26")
 LAMIX_USERNAME = os.getenv("LAMIX_USERNAME", "")
 LAMIX_PASSWORD = os.getenv("LAMIX_PASSWORD", "")
+TEST_RANGE     = "Sri Lanka LX 04May"  # টেস্ট করার range
 
-print("=" * 50)
-print("🔍 LAMIX LOGIN DEBUG TOOL")
-print("=" * 50)
+print("=" * 60)
+print("🔍 ALLOCATE DEBUG TOOL")
+print("=" * 60)
 
-
-# ══════════════════════════════════════════════
-#  STEP 1: Config চেক
-# ══════════════════════════════════════════════
-print("\n📌 STEP 1: Config চেক")
-print(f"  LAMIX_URL      = {LAMIX_URL}")
-print(f"  LAMIX_USERNAME = {LAMIX_USERNAME if LAMIX_USERNAME else '❌ খালি!'}")
-print(f"  LAMIX_PASSWORD = {'*' * len(LAMIX_PASSWORD) if LAMIX_PASSWORD else '❌ খালি!'}")
-
-if not LAMIX_URL:
-    print("  ❌ LAMIX_URL সেট নেই! .env চেক করুন।")
-    exit(1)
-if not LAMIX_USERNAME:
-    print("  ❌ LAMIX_USERNAME সেট নেই!")
-    exit(1)
-if not LAMIX_PASSWORD:
-    print("  ❌ LAMIX_PASSWORD সেট নেই!")
-    exit(1)
-print("  ✅ Config OK")
-
-
-# ══════════════════════════════════════════════
-#  STEP 2: Server Reachable চেক
-# ══════════════════════════════════════════════
-print("\n📌 STEP 2: Server চেক")
+# ── Login ──────────────────────────────────────────────────
 session = requests.Session()
-session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+})
 
-try:
-    r = session.get(LAMIX_URL, timeout=10)
-    print(f"  ✅ Server alive! Status: {r.status_code}, URL: {r.url}")
-except Exception as e:
-    print(f"  ❌ Server reach করা যাচ্ছে না: {e}")
-    exit(1)
-
-
-# ══════════════════════════════════════════════
-#  STEP 3: Login Page GET
-# ══════════════════════════════════════════════
-print("\n📌 STEP 3: Login Page GET")
-login_url = f"{LAMIX_URL}/ints/login"
-try:
-    resp = session.get(login_url, timeout=15)
-    print(f"  Status  : {resp.status_code}")
-    print(f"  Final URL: {resp.url}")
-    if resp.status_code != 200:
-        print(f"  ❌ Login page load হয়নি!")
-        exit(1)
-    print("  ✅ Login page OK")
-except Exception as e:
-    print(f"  ❌ Exception: {e}")
-    exit(1)
-
-
-# ══════════════════════════════════════════════
-#  STEP 4: Captcha Solve
-# ══════════════════════════════════════════════
-print("\n📌 STEP 4: Captcha Solve")
+print("\n📌 STEP 1: Login")
+resp = session.get(f"{LAMIX_URL}/ints/login", timeout=15)
 soup = BeautifulSoup(resp.text, "html.parser")
-page_text = soup.get_text(" ", strip=True)
+text = soup.get_text(" ", strip=True)
+m = re.search(r'(\d+)\s*([+\-])\s*(\d+)', text)
+captcha = str(int(m.group(1)) + int(m.group(3))) if m and m.group(2) == '+' else str(int(m.group(1)) - int(m.group(3))) if m else "0"
+print(f"  Captcha: {captcha}")
 
-# Math captcha খোঁজা
-m = re.search(r'(\d+)\s*([+\-])\s*(\d+)', page_text)
-if m:
-    a, op, b = int(m.group(1)), m.group(2), int(m.group(3))
-    captcha = str(a + b if op == '+' else a - b)
-    print(f"  ✅ Captcha found: {a} {op} {b} = {captcha}")
-else:
-    captcha = "0"
-    print(f"  ⚠️ Captcha পাওয়া যায়নি! '0' দিয়ে চেষ্টা করব।")
-    print(f"  Page text (first 200 chars): {page_text[:200]}")
+resp = session.post(f"{LAMIX_URL}/ints/signin",
+    data={"username": LAMIX_USERNAME, "password": LAMIX_PASSWORD, "capt": captcha},
+    timeout=15, allow_redirects=True)
 
-# Form fields চেক
-print(f"\n  Form inputs found:")
-for inp in soup.find_all("input"):
-    name = inp.get("name", "")
-    itype = inp.get("type", "text")
-    val = inp.get("value", "")
-    if name:
-        print(f"    name='{name}' type='{itype}' value='{val}'")
+if "login" in resp.url.lower():
+    print("  ❌ Login Failed!")
+    exit(1)
+print(f"  ✅ Login OK → {resp.url}")
 
+session.headers.update({
+    "X-Requested-With": "XMLHttpRequest",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Referer": f"{LAMIX_URL}/ints/agent/MySMSNumbers",
+})
 
-# ══════════════════════════════════════════════
-#  STEP 5: POST Login
-# ══════════════════════════════════════════════
-print("\n📌 STEP 5: POST Login")
-post_data = {
-    "username": LAMIX_USERNAME,
-    "password": LAMIX_PASSWORD,
-    "capt": captcha,
+# ── Fetch Numbers ──────────────────────────────────────────
+print(f"\n📌 STEP 2: '{TEST_RANGE}' এর numbers fetch")
+params = {
+    "frange": TEST_RANGE, "fclient": "", "totnum": "220",
+    "sEcho": "1", "iColumns": "8", "sColumns": "%2C%2C%2C%2C%2C%2C%2C",
+    "iDisplayStart": "0", "iDisplayLength": "10000",
+    "sSearch": "", "bRegex": "false",
+    "iSortCol_0": "0", "sSortDir_0": "asc", "iSortingCols": "1",
+    "_": str(int(time.time() * 1000)),
 }
-print(f"  POST URL : {LAMIX_URL}/ints/signin")
-print(f"  POST data: username={LAMIX_USERNAME}, capt={captcha}, password=***")
+for i in range(8):
+    params[f"mDataProp_{i}"] = str(i)
+    params[f"sSearch_{i}"] = ""
+    params[f"bRegex_{i}"] = "false"
+    params[f"bSearchable_{i}"] = "true"
+    params[f"bSortable_{i}"] = "false" if i in (0, 7) else "true"
 
-try:
-    resp2 = session.post(
-        f"{LAMIX_URL}/ints/signin",
-        data=post_data,
-        timeout=15,
-        allow_redirects=True,
-    )
-    print(f"  Status   : {resp2.status_code}")
-    print(f"  Final URL: {resp2.url}")
+resp = session.get(f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php", params=params, timeout=30)
+print(f"  Status: {resp.status_code}")
+rows = resp.json().get("aaData", [])
+print(f"  Total rows: {len(rows)}")
 
-    if "login" in resp2.url.lower():
-        print("  ❌ Login FAILED! এখনো login page এ আছে।")
-        print(f"\n  Response HTML (first 500 chars):\n{resp2.text[:500]}")
+# ── Find first available ───────────────────────────────────
+print(f"\n📌 STEP 3: Available number খোঁজা")
+first_available = None
+for i, row in enumerate(rows[:10]):  # প্রথম ১০টা দেখি
+    if len(row) < 6:
+        continue
+    inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
+    num_id = inp["value"] if inp else ""
+    number = str(row[3]).strip()
+    client_cell = str(row[5])
+    client_soup = BeautifulSoup(client_cell, "html.parser")
+    has_allocate   = bool(client_soup.find("a", id="allocate"))
+    has_unallocate = bool(client_soup.find("a", id="unallocate"))
+    client_text = client_soup.get_text(strip=True)
+    
+    print(f"  Row {i}: number={number}, id={num_id}")
+    print(f"    has_allocate={has_allocate}, has_unallocate={has_unallocate}, text='{client_text[:50]}'")
+    
+    if has_allocate and not has_unallocate and not first_available:
+        first_available = (num_id, number)
+        print(f"    ✅ AVAILABLE!")
+    elif has_unallocate:
+        print(f"    ❌ Already assigned")
 
-        # Error message খোঁজা
-        err_soup = BeautifulSoup(resp2.text, "html.parser")
-        for tag in err_soup.find_all(["div", "p", "span"], class_=re.compile(r"error|alert|danger|warning", re.I)):
-            print(f"  🔴 Error message: {tag.get_text(strip=True)}")
-    else:
-        print("  ✅ Login SUCCESS!")
-        print(f"\n  🎉 Landed on: {resp2.url}")
-
-except Exception as e:
-    print(f"  ❌ Exception: {e}")
+if not first_available:
+    print("\n❌ কোনো available number পাওয়া যায়নি!")
     exit(1)
 
+num_id, number = first_available
+print(f"\n✅ Test করব: number={number}, id={num_id}")
 
-# ══════════════════════════════════════════════
-#  STEP 6: Session / API চেক (login সফল হলে)
-# ══════════════════════════════════════════════
-if "login" not in resp2.url.lower():
-    print("\n📌 STEP 6: API Session চেক")
-    session.headers.update({
+# ── Fetch Clients ──────────────────────────────────────────
+print(f"\n📌 STEP 4: Client list fetch")
+c_params = {
+    "sEcho": "1", "iColumns": "8", "sColumns": "%2C%2C%2C%2C%2C%2C%2C",
+    "iDisplayStart": "0", "iDisplayLength": "100",
+    "sSearch": "", "bRegex": "false",
+    "iSortCol_0": "0", "sSortDir_0": "asc", "iSortingCols": "1",
+    "_": str(int(time.time() * 1000)),
+}
+for i in range(8):
+    c_params[f"mDataProp_{i}"] = str(i)
+    c_params[f"sSearch_{i}"] = ""
+    c_params[f"bRegex_{i}"] = "false"
+    c_params[f"bSearchable_{i}"] = "true"
+    c_params[f"bSortable_{i}"] = "false" if i in (0, 7) else "true"
+
+cr = session.get(f"{LAMIX_URL}/ints/agent/res/data_clients.php",
+    params=c_params, headers={"Referer": f"{LAMIX_URL}/ints/agent/Clients"}, timeout=15)
+client_rows = cr.json().get("aaData", [])
+print(f"  Clients found: {len(client_rows)}")
+for row in client_rows:
+    inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
+    cid = inp["value"] if inp else "?"
+    print(f"  → username={row[1]}, client_id={cid}")
+
+# ── Modal GET ──────────────────────────────────────────────
+print(f"\n📌 STEP 5: Modal GET (form load)")
+modal = session.post(
+    f"{LAMIX_URL}/ints/agent/res/allocatesmsnumber.php",
+    data={"id": num_id, "frange": "", "fclient": ""},
+    headers={
+        "Referer": f"{LAMIX_URL}/ints/agent/MySMSNumbers?fclient=&frange=",
         "X-Requested-With": "XMLHttpRequest",
-        "Referer": f"{LAMIX_URL}/ints/agent/SMSDashboard",
-        "Origin": LAMIX_URL,
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-    })
-    try:
-        import time
-        params = {"sEcho": "1", "iDisplayStart": "0", "iDisplayLength": "10", "_": str(int(time.time() * 1000))}
-        r3 = session.get(
-            f"{LAMIX_URL}/ints/agent/res/data_clients.php",
-            params=params,
-            headers={"Referer": f"{LAMIX_URL}/ints/agent/Clients"},
-            timeout=15,
-        )
-        print(f"  Clients API status: {r3.status_code}")
-        if r3.status_code == 200:
-            try:
-                data = r3.json()
-                count = len(data.get("aaData", []))
-                print(f"  ✅ API OK! Clients found: {count}")
-            except:
-                print(f"  ⚠️ JSON parse error. Response: {r3.text[:200]}")
-        else:
-            print(f"  ❌ API failed. Response: {r3.text[:200]}")
-    except Exception as e:
-        print(f"  ❌ API Exception: {e}")
+        "Accept": "*/*",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    },
+    timeout=15,
+)
+print(f"  Status: {modal.status_code}")
+print(f"  Response:\n{modal.text[:800]}")
 
-print("\n" + "=" * 50)
+# ── Allocate POST ──────────────────────────────────────────
+# প্রথম client দিয়ে test করব
+if client_rows:
+    inp = BeautifulSoup(str(client_rows[0][0]), "html.parser").find("input")
+    test_client_id = inp["value"] if inp else ""
+    test_client_name = str(client_rows[0][1])
+    print(f"\n📌 STEP 6: Allocate POST (client: {test_client_name}, id: {test_client_id})")
+    
+    alloc = session.post(
+        f"{LAMIX_URL}/ints/agent/res/allocatesmsnumber.php",
+        data={
+            "action":  "allocate",
+            "id":      num_id,
+            "client":  test_client_id,
+            "payterm": "2",
+            "payout":  "0",
+            "frange":  "",
+            "fclient": "",
+        },
+        headers={
+            "Referer": f"{LAMIX_URL}/ints/agent/MySMSNumbers?fclient=&frange=",
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "*/*",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        },
+        timeout=15,
+    )
+    print(f"  Status: {alloc.status_code}")
+    print(f"  Response:\n{alloc.text[:500]}")
+else:
+    print("\n❌ কোনো client নেই!")
+
+print("\n" + "=" * 60)
 print("✅ Debug complete!")
-print("=" * 50)
-  
+print("=" * 60)
