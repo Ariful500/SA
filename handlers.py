@@ -868,13 +868,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("❌ Deny", callback_data=f"deny_reset_{user_id}"),
         ]]
         tg_uname = f"@{update.effective_user.username}" if update.effective_user.username else str(user_id)
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=f"🔔 *Limit Reset Request!*\n\n👤 {tg_uname}\n🆔 `{user_id}`\n📊 {user['daily_used']}/{user['daily_limit']}",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-        await query.edit_message_text("✅ রিকোয়েস্ট পাঠানো হয়েছে!")
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"🔔 *Limit Reset Request!*\n\n👤 {tg_uname}\n🆔 `{user_id}`\n📊 {user['daily_used']}/{user['daily_limit']}",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            await query.edit_message_text("✅ রিকোয়েস্ট পাঠানো হয়েছে!")
+        except Exception as e:
+            print(f"[request_reset] Admin notify failed: {e}")
+            await query.edit_message_text(
+                "⚠️ রিকোয়েস্ট পাঠাতে সমস্যা হয়েছে।\n"
+                "এডমিনকে সরাসরি যোগাযোগ করুন।"
+            )
         return
 
     # ── Admin Approve/Deny ──
