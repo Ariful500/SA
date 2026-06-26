@@ -183,11 +183,18 @@ def fetch_ranges() -> list[dict]:
         range_dict: dict[str, dict] = {}
 
         for row in rows:
+            # স্ক্রিনশট অনুযায়ী column mapping:
+            # row[0]=Range, row[1]=Prefix, row[2]=Number,
+            # row[3]=My Payout (Weekly/$0.019), row[4]=Client (✏=available),
+            # row[5]=Payout, row[6]=Limits
             range_name = str(row[0]).strip()
             number     = str(row[2]).strip()
-            payterm    = str(row[3]).strip() if len(row) > 3 else "Weekly"
-            payout     = str(row[4]).strip() if len(row) > 4 else "0.019"
-            client     = str(row[5]).strip() if len(row) > 5 else ""
+            # row[3] তে "Weekly" ও "$0.019" দুটোই থাকতে পারে HTML হিসেবে
+            payout_raw = BeautifulSoup(str(row[3]), "html.parser").get_text(" ", strip=True) if len(row) > 3 else "Weekly $0.019"
+            payterm    = "Weekly" if "weekly" in payout_raw.lower() else payout_raw.split()[0]
+            payout     = next((p for p in payout_raw.split() if p.startswith("$")), "$0.019").replace("$", "")
+            # row[4] = Client কলাম — ✏ বা খালি মানে available
+            client     = str(row[4]).strip() if len(row) > 4 else ""
 
             if range_name not in range_dict:
                 range_dict[range_name] = {
@@ -237,7 +244,7 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
 
         available_numbers, number_ids = [], []
         for row in rows:
-            client = str(row[5]).strip() if len(row) > 5 else ""
+            client = str(row[4]).strip() if len(row) > 4 else ""
             if _is_available(client):
                 number = str(row[2]).strip()
                 inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
@@ -275,3 +282,4 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
 
 async def allocate_numbers_async(client_id: str, range_name: str, quantity: int) -> dict | None:
     return await asyncio.to_thread(allocate_numbers, client_id, range_name, quantity)
+    
