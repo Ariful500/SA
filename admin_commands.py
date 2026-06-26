@@ -1,0 +1,234 @@
+import datetime
+import re
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+
+from config import ADMIN_ID
+from database import (
+    get_user, reset_all_limits, reset_user_usage, add_user_limit,
+    ban_user, unban_user, get_all_users, reset_member,
+    get_daily_limit, get_max_per_order, set_daily_limit, set_max_per_order,
+    get_user_by_telegram_username, get_leaderboard, get_total_sms,
+)
+from user_commands import is_admin, _extract_username_arg
+
+
+# ══════════════════════════════════════════════
+#  ADMIN COMMANDS
+# ══════════════════════════════════════════════
+
+async def refresh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
+        return
+    count = await reset_all_limits()
+    current_limit = await get_daily_limit()
+    await update.message.reply_text(
+        f"🔄 *All Limits Reset!*\n\n✅ {count} জন ইউজারের লিমিট {current_limit} হয়েছে।",
+        parse_mode="Markdown",
+    )
+
+
+async def addlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
+        return
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text(
+            "⚠️ সঠিকভাবে লিখুন:\n`/addlimit @Username AMOUNT`",
+            parse_mode="Markdown",
+        )
+        return
+
+    tg_username = _extract_username_arg(args[0])
+    try:
+        amount = int(args[1])
+    except ValueError:
+        await update.message.reply_text("❌ AMOUNT সংখ্যা হতে হবে।")
+        return
+
+    user = await get_user_by_telegram_username(tg_username)
+    if not user:
+        await update.message.reply_text(f"❌ `@{tg_username}` ইউজার পাওয়া যায়নি।", parse_mode="Markdown")
+        return
+
+    target_id = user["user_id"]
+    await add_user_limit(target_id, amount)
+    await context.bot.send_message(
+        chat_id=target_id,
+        text=f"🎉 *লিমিট বাড়ানো হয়েছে!*\n\n➕ Added: *{amount}*\n📊 New Limit: *{user['daily_limit'] + amount}*",
+        parse_mode="Markdown",
+    )
+    await update.message.reply_text(
+        f"✅ *Limit Added!*\n\n👤 User: @{tg_username}\n➕ Added: *{amount}*",
+        parse_mode="Markdown",
+    )
+
+
+async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rows = await get_leaderboard()
+    total = await get_total_sms()
+    if not rows:
+        await update.message.reply_text("📊 এখনো কোনো ডেটা নেই।")
+        return
+    medals = ["🥇", "🥈", "🥉"]
+    text = "🏆 *SMS Leaderboard*\n\n"
+    for i, row in enumerate(rows):
+        uname = f"@{row['telegram_username']}" if row['telegram_username'] else row['username']
+        prefix = medals[i] if i < 3 else f"{i+1}️⃣"
+        text += f"{prefix} {uname} — *{row['total_allocated']}*\n"
+    now = datetime.datetime.now().strftime("%I:%M %p")
+    text += f"\n📊 Total SMS: *{total:,}*\n⏰ Updated: {now}"
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def fetchlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
+        return
+    current_daily_limit = await get_daily_limit()
+    current_max_per_order = await get_max_per_order()
+    keyboard = [
+        [InlineKeyboardButton("✏️ Daily Limit বদলান", callback_data="edit_daily_limit")],
+        [InlineKeyboardButton("✏️ Max Per Order বদলান", callback_data="edit_max_per_order")],
+    ]
+    await update.message.reply_text(
+        f"⚙️ *Limit Settings*\n\n"
+        f"📊 Daily Limit: *{current_daily_limit}*\n"
+        f"⏰ Auto Reset: সকাল *৬:০০ AM*\n"
+        f"🔢 Max per order: *{current_max_per_order}*",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
+        return
+    if not context.args:
+        await update.message.reply_text("⚠️ `/broadcast আপনার মেসেজ`", parse_mode="Markdown")
+        return
+    message = " ".join(context.args)
+    users = await get_all_users()
+    sent = failed = 0
+    for u in users:
+        try:
+            await context.bot.send_message(
+                chat_id=u["user_id"],
+                text=f"📢 *Admin Broadcast*\n\n{message}",
+                parse_mode="Markdown",
+            )
+            sent += 1
+        except Exception:
+            failed += 1
+    await update.message.reply_text(
+        f"📢 *Broadcast Complete!*\n\n✅ Sent: *{sent}*\n❌ Failed: *{failed}*",
+        parse_mode="Markdown",
+    )
+
+
+async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
+        return
+    if not context.args:
+        await update.message.reply_text("⚠️ `/ban @Username`", parse_mode="Markdown")
+        return
+
+    tg_username = _extract_username_arg(context.args[0])
+    user = await get_user_by_telegram_username(tg_username)
+    if not user:
+        await update.message.reply_text(f"❌ `@{tg_username}` ইউজার পাওয়া যায়নি।", parse_mode="Markdown")
+        return
+
+    target_id = user["user_id"]
+    await ban_user(target_id)
+    try:
+        await context.bot.send_message(chat_id=target_id, text="🚫 আপনাকে ব্যান করা হয়েছে।")
+    except Exception:
+        pass
+    await update.message.reply_text(
+        f"🚫 *User Banned!*\n\n👤 User: @{tg_username}\n🧑 Username: *{user['username']}*",
+        parse_mode="Markdown",
+    )
+
+
+async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
+        return
+    if not context.args:
+        await update.message.reply_text("⚠️ `/unban @Username`", parse_mode="Markdown")
+        return
+
+    tg_username = _extract_username_arg(context.args[0])
+    user = await get_user_by_telegram_username(tg_username)
+    if not user:
+        await update.message.reply_text(f"❌ `@{tg_username}` ইউজার পাওয়া যায়নি।", parse_mode="Markdown")
+        return
+
+    target_id = user["user_id"]
+    await unban_user(target_id)
+    try:
+        await context.bot.send_message(chat_id=target_id, text="✅ ব্যান তুলে নেওয়া হয়েছে।")
+    except Exception:
+        pass
+    await update.message.reply_text(
+        f"✅ *User Unbanned!*\n\n👤 User: @{tg_username}\n🧑 Username: *{user['username']}*",
+        parse_mode="Markdown",
+    )
+
+
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
+        return
+    if not context.args:
+        await update.message.reply_text("⚠️ `/reset @Username`", parse_mode="Markdown")
+        return
+
+    tg_username = _extract_username_arg(context.args[0])
+    user = await get_user_by_telegram_username(tg_username)
+    if not user:
+        await update.message.reply_text(f"❌ `@{tg_username}` ইউজার পাওয়া যায়নি।", parse_mode="Markdown")
+        return
+
+    target_id = user["user_id"]
+    keyboard = [[
+        InlineKeyboardButton("✅ Confirm Reset", callback_data=f"confirm_reset_{target_id}"),
+        InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+    ]]
+    await update.message.reply_text(
+        f"⚠️ *@{tg_username}* কে সম্পূর্ণ রিসেট করবেন?\n\n"
+        f"🧑 Lamix Username: *{user['username']}*\n"
+        f"📊 Used: {user['daily_used']}/{user['daily_limit']}\n"
+        f"🔄 Total Allocated: {user['total_allocated']}\n\n"
+        f"⚠️ এটি করলে তার লিঙ্ক, লিমিট, ইউসেজ — সবকিছু মুছে যাবে। তাকে আবার /link করতে হবে।",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def userlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
+        return
+    users = await get_all_users()
+    if not users:
+        await update.message.reply_text("📋 এখনো কোনো ইউজার নেই।")
+        return
+    text = f"👥 *User List* ({len(users)} জন)\n\n"
+    for i, u in enumerate(users, 1):
+        status = "🚫" if u["is_banned"] else "✅"
+        uname = f"@{u['telegram_username']}" if u["telegram_username"] else "N/A"
+        text += (
+            f"{i}. {status} {uname}\n"
+            f"   🧑 `{u['username']}` | 📊 {u['daily_used']}/{u['daily_limit']} | 🔄 {u['total_allocated']}\n\n"
+        )
+    if len(text) > 4000:
+        for chunk in [text[i:i+4000] for i in range(0, len(text), 4000)]:
+            await update.message.reply_text(chunk, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, parse_mode="Markdown")
