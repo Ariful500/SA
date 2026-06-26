@@ -31,6 +31,15 @@ async def get_user(user_id: int):
             return await cursor.fetchone()
 
 
+# ✅ Username আগে থেকে ব্যবহার হচ্ছে কিনা চেক
+async def is_username_taken(username: str) -> bool:
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        async with db.execute(
+            "SELECT user_id FROM users WHERE LOWER(username) = LOWER(?)", (username,)
+        ) as cursor:
+            return await cursor.fetchone() is not None
+
+
 # ✅ নতুন ইউজার অ্যাড
 async def add_user(user_id: int, telegram_username: str, lamix_username: str, client_id: str):
     async with aiosqlite.connect(DATABASE_NAME) as db:
@@ -145,4 +154,4 @@ async def get_total_sms():
         ) as cursor:
             row = await cursor.fetchone()
             return row[0] or 0
-      
+            
