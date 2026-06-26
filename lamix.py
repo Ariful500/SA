@@ -1,12 +1,9 @@
 """
-lamix.py — Lamix scraping + async wrappers (fixed v4)
+lamix.py — Lamix scraping + async wrappers (fixed v5)
 
-v4 fix: allocate_numbers() এখন সঠিক endpoint ব্যবহার করে।
-Network tab capture থেকে কনফার্ম হয়েছে যে actual allocate request যায়:
-    POST /ints/agent/MySMSNumbers?fclient=&frange=
-(আগের res/allocatesmsnumber.php endpoint টা ভুল ছিল — সেটা শুধু modal/preview দেখায়,
-আসল submit হয় MySMSNumbers পেজেই, normal form POST হিসেবে — তাই X-Requested-With
-header ছাড়া পাঠাতে হবে এবং success বোঝা যায় 302 redirect দিয়ে, 200 দিয়ে না)
+v5 fix:
+- allocate delay 0.5s → 0.2s (faster number allocation)
+- সব অন্য logic same থেকেছে
 """
 import re
 import time
@@ -188,8 +185,6 @@ _COUNTRY_CODES = {
 
 def _get_country_code(range_name: str) -> str:
     name = range_name.lower()
-    # দীর্ঘ নাম আগে চেক করা হয় (substring conflict এড়াতে, যেমন:
-    # "niger" "nigeria"-র মধ্যে আছে, "congo" "dr congo"-র মধ্যে আছে)
     for country in sorted(_COUNTRY_CODES.keys(), key=len, reverse=True):
         if country in name:
             return _COUNTRY_CODES[country]
@@ -343,24 +338,7 @@ async def verify_username_async(username: str) -> tuple[str | None, bool]:
 
 
 # ══════════════════════════════════════════════
-#  ALLOCATE NUMBERS
-#
-#  ✅ FIXED (v4): Network tab capture থেকে কনফার্ম হয়েছে real endpoint:
-#     POST /ints/agent/MySMSNumbers?fclient=&frange=
-#     (NOT /ints/agent/res/allocatesmsnumber.php — সেটা ভুল ছিল)
-#
-#  Form fields (exact, ব্রাউজার থেকে capture করা):
-#     action=allocate
-#     id=<num_id>
-#     frange=
-#     fclient=
-#     client=<client_id>
-#     payterm=2        (Weekly)
-#     payout=0
-#
-#  Success signal: HTTP 302 redirect (Location: MySMSNumbers?fclient=&frange=)
-#  — এটা normal form POST, তাই X-Requested-With header পাঠানো হয়নি এখানে
-#  (session-level X-Requested-With override করে None সেট করা হয়েছে)
+#  ALLOCATE NUMBERS  (v5 — delay 0.5s → 0.2s)
 # ══════════════════════════════════════════════
 
 PAYTERM_MAP = {
@@ -376,7 +354,6 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
     if not s:
         return None
     try:
-        # frange filter কাজ করে না, তাই সব data এনে range_name দিয়ে filter করি
         params = _numbers_params(echo="3", length=10000, frange="")
         resp = s.get(
             f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
@@ -387,7 +364,6 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
         rows = [r for r in all_rows if len(r) > 1 and str(r[1]).strip() == range_name]
         print(f"[Allocate] '{range_name}' rows: {len(rows)} (total: {len(all_rows)})")
 
-        # Step 2: Available numbers collect
         available = []
         for row in rows:
             if len(row) < 6:
@@ -417,13 +393,12 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                 "reason": f"Only {len(available)} available, requested {quantity}",
             }
 
-        # Step 3: প্রতিটা number সঠিক endpoint দিয়ে allocate করুন
         assigned = []
         mysms_referer = f"{LAMIX_URL}/ints/agent/MySMSNumbers?fclient=&frange="
 
         for num_id, number, payterm_val in available[:quantity]:
             success = False
-            for attempt in range(2):  # প্রথমবার fail হলে re-login করে একবার retry
+            for attempt in range(2):
                 try:
                     alloc_resp = s.post(
                         f"{LAMIX_URL}/ints/agent/MySMSNumbers",
@@ -438,8 +413,6 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                             "payout":  "0",
                         },
                         headers={
-                            # browser capture-এ এই request টা plain form submit ছিল,
-                            # XHR না — তাই AJAX headers override করে বাদ দেওয়া হলো
                             "X-Requested-With": None,
                             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                             "Content-Type": "application/x-www-form-urlencoded",
@@ -448,7 +421,7 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                             "Upgrade-Insecure-Requests": "1",
                         },
                         timeout=15,
-                        allow_redirects=False,  # 302 ধরার জন্য, follow করব না
+                        allow_redirects=False,
                     )
                     print(f"[Allocate] Assign {number} (id:{num_id}) → {alloc_resp.status_code}")
 
@@ -457,14 +430,9 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                         s = _reset_session()
                         if not s:
                             break
-                        continue  # retry এই number এর জন্য
+                        continue
 
                     if alloc_resp.status_code == 302:
-                        # ✅ Browser যেমন redirect follow করে পরের পেজ GET করে নেয়,
-                        # সেটাই এখানে করা হচ্ছে — কারণ Network capture-এ দেখা গেছে
-                        # POST এর পরপরই MySMSNumbers পেজের একটা GET request আসে।
-                        # এটা না করলে সার্ভার সেশনে আগের request টা "pending" থেকে
-                        # যায় বলে মনে হচ্ছে, যেটার কারণে ২য়/৩য় নম্বর fail করে।
                         location = alloc_resp.headers.get("Location", mysms_referer)
                         if location.startswith("/"):
                             location = f"{LAMIX_URL}{location}"
@@ -490,8 +458,8 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
             if success:
                 assigned.append(number)
 
-            # পরপর রিকোয়েস্টে rate-limit/session সমস্যা এড়াতে ছোট delay
-            time.sleep(0.5)
+            # ✅ v5: 0.5s → 0.2s (faster allocation)
+            time.sleep(0.2)
 
         print(f"[Allocate] Final result: {len(assigned)}/{quantity} assigned")
 
