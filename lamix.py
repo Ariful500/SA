@@ -1,5 +1,5 @@
 """
-lamix.py — Lamix scraping + async wrappers (fixed)
+lamix.py — Lamix scraping + async wrappers (fixed v2)
 """
 import re
 import time
@@ -107,14 +107,20 @@ def _numbers_params(echo: str = "1", length: int = 10000, frange: str = "") -> d
 
 # ══════════════════════════════════════════════
 #  AVAILABLE CHECK
+# client cell এ শুধু ✏ allocate link = খালি (available)
+# client cell এ নাম/text আছে = assigned (not available)
 # ══════════════════════════════════════════════
 
 def _is_available(client_cell: str) -> bool:
-    """Client column এ শুধু ✏ edit link থাকলে available"""
     soup = BeautifulSoup(client_cell, "html.parser")
+    # সব tag বাদ দিয়ে শুধু text নিন
     text = soup.get_text(strip=True)
-    # assigned হলে client নাম থাকবে, available হলে শুধু ✏ icon
-    return "allocate" in client_cell.lower() and text.strip() in ("", "✏", "/")
+    # assigned হলে client নাম থাকবে (non-empty meaningful text)
+    # available হলে শুধু ✏ pencil icon বা খালি থাকবে
+    # "allocate" link আছে মানে এখনো কাউকে দেওয়া হয়নি
+    has_allocate_link = bool(soup.find("a", id="allocate"))
+    has_client_name = bool(text and text not in ("", "/", "✏", "✎"))
+    return has_allocate_link and not has_client_name
 
 
 # ══════════════════════════════════════════════
@@ -133,7 +139,7 @@ def _get_country_code(range_name: str) -> str:
         "nepal": "977", "indonesia": "62", "ethiopia": "251",
         "cameroon": "237", "tanzania": "255", "sudan": "249",
         "syria": "963", "russia": "7", "georgia": "995",
-        "kazakhstan": "7", "bangladesh": "880",
+        "kazakhstan": "7", "bangladesh": "880", "sri lanka": "94",
     }
     name = range_name.lower()
     for country, code in codes.items():
@@ -143,7 +149,7 @@ def _get_country_code(range_name: str) -> str:
 
 
 # ══════════════════════════════════════════════
-#  FETCH RANGES
+#  FETCH RANGES (A→Z sorted, only truly available)
 # ══════════════════════════════════════════════
 
 def fetch_ranges() -> list[dict]:
@@ -158,7 +164,6 @@ def fetch_ranges() -> list[dict]:
             timeout=30,
         )
 
-        # Session expired চেক
         if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
             print("[Ranges] Session expired, re-login...")
             s = _reset_session()
@@ -172,7 +177,7 @@ def fetch_ranges() -> list[dict]:
 
         data = resp.json()
         rows = data.get("aaData", [])
-        print(f"[Ranges] Total rows: {len(rows)}")
+        print(f"[Ranges] Total rows from API: {len(rows)}")
 
         range_dict: dict[str, dict] = {}
 
@@ -180,43 +185,46 @@ def fetch_ranges() -> list[dict]:
             if len(row) < 6:
                 continue
 
-            # Number ID (checkbox value)
-            inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
-            num_id = inp["value"] if inp else ""
-
+            inp        = BeautifulSoup(str(row[0]), "html.parser").find("input")
+            num_id     = inp["value"] if inp else ""
             range_name = str(row[1]).strip()
             number     = str(row[3]).strip()
+            client_cell = str(row[5])
 
             # Payout parse
-            payout_soup = BeautifulSoup(str(row[4]), "html.parser")
-            payout_text = payout_soup.get_text(" ", strip=True)
+            payout_text = BeautifulSoup(str(row[4]), "html.parser").get_text(" ", strip=True)
             payterm = "Weekly" if "weekly" in payout_text.lower() else payout_text.split()[0]
             payout  = next((p for p in payout_text.split() if p.startswith("$")), "$0.019").replace("$", "")
-
-            client_cell = str(row[5])
-            available   = _is_available(client_cell)
 
             if range_name not in range_dict:
                 range_dict[range_name] = {
                     "id": range_name,
                     "name": range_name,
-                    "available": 0,
-                    "total": 0,
+                    "available": 0,   # শুধু unassigned count
+                    "total": 0,       # মোট number count
                     "payterm": payterm,
                     "payout": payout,
                     "country_code": _get_country_code(range_name),
-                    "numbers": [],      # available numbers
-                    "number_ids": [],   # available number IDs
+                    "numbers": [],    # unassigned numbers only
+                    "number_ids": [], # unassigned number IDs only
                 }
 
             range_dict[range_name]["total"] += 1
-            if available:
+
+            # শুধু unassigned (truly available) numbers যোগ করুন
+            if _is_available(client_cell) and num_id and number:
                 range_dict[range_name]["available"] += 1
                 range_dict[range_name]["numbers"].append(number)
                 range_dict[range_name]["number_ids"].append(num_id)
 
+        # শুধু available > 0 রাখুন, A→Z সর্ট করুন
         result = [r for r in range_dict.values() if r["available"] > 0]
-        print(f"[Ranges] Available ranges: {len(result)}")
+        result.sort(key=lambda x: x["name"].upper())
+
+        print(f"[Ranges] Available ranges (A→Z): {len(result)}")
+        for r in result:
+            print(f"  📦 {r['name']} — available: {r['available']}/{r['total']}")
+
         return result
 
     except Exception as e:
@@ -302,7 +310,7 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
     if not s:
         return None
     try:
-        # Fresh data নিন ওই range এর জন্য
+        # Fresh data নিন শুধু ওই range এর জন্য
         params = _numbers_params(echo="3", length=10000, frange=range_name)
         resp = s.get(
             f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
@@ -311,7 +319,6 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
         )
         rows = resp.json().get("aaData", [])
 
-        # Available numbers collect করুন
         available = []
         for row in rows:
             if len(row) < 6:
@@ -326,12 +333,15 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
             if len(available) >= quantity:
                 break
 
-        print(f"[Allocate] Available for '{range_name}': {len(available)}, requested: {quantity}")
+        print(f"[Allocate] '{range_name}' available: {len(available)}, requested: {quantity}")
 
         if len(available) < quantity:
-            return {"status": "failed", "numbers": [], "reason": f"Only {len(available)} available"}
+            return {
+                "status": "failed",
+                "numbers": [],
+                "reason": f"Only {len(available)} available, requested {quantity}",
+            }
 
-        # Assign করুন
         assigned = []
         for num_id, number in available[:quantity]:
             try:
@@ -341,14 +351,14 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                     headers={"Referer": f"{LAMIX_URL}/ints/agent/Numbers"},
                     timeout=15,
                 )
-                print(f"[Allocate] {number} → status {r.status_code}")
+                print(f"[Allocate] {number} (id:{num_id}) → {r.status_code}")
                 if r.status_code == 200:
                     assigned.append(number)
             except Exception as e:
                 print(f"[Allocate] Error [{number}]: {e}")
 
         if not assigned:
-            return {"status": "failed", "numbers": [], "reason": "Assign failed"}
+            return {"status": "failed", "numbers": [], "reason": "All assign requests failed"}
 
         return {"status": "success", "numbers": assigned}
 
