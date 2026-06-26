@@ -51,6 +51,67 @@ def _strip_code(number: str, code: str) -> str:
     return number
 
 
+def _strip_plus(number: str) -> str:
+    """Remove only the leading + sign, keep everything else."""
+    return number.lstrip("+")
+
+
+def _fix_malaysia(number: str) -> str:
+    """
+    Malaysia country code = 60.
+    Lamix panel bug: কখনো কখনো 600XXXXXXXXX আসে (একটা বাড়তি 0)।
+    +600125608118 → +60125608118 (60 এর পরে বাড়তি 0 বাদ)
+    Plain format: 600125608118 → 60125608118
+    """
+    for prefix in ("+600", "600"):
+        if number.startswith(prefix):
+            rest = number[len(prefix):]
+            # subscriber number সাধারণত 9-10 digit; 600X… মানে extra 0
+            replacement = ("+60" if prefix.startswith("+") else "60") + rest
+            return replacement
+    return number
+
+
+def _post_process_numbers(numbers: list[str], country_code: str) -> list[str]:
+    """Apply any country-specific fixes after allocation."""
+    if country_code == "60":
+        return [_fix_malaysia(n) for n in numbers]
+    return numbers
+
+
+def _build_number_buttons(country_code: str, code_embedded: bool, has_plus: bool) -> list:
+    """
+    বাটন logic:
+    - code নেই, + নেই  → [➕ Add Country Code]
+    - code আছে, + আছে  → [➖ Remove Country Code] [➖ Remove +]
+    - code আছে, + নেই  → [➖ Remove Country Code] [➕ Add +] (edge case)
+    - code নেই, + আছে  → [➖ Remove +]
+    """
+    keyboard = []
+    if country_code:
+        if code_embedded:
+            row = [InlineKeyboardButton(
+                f"➖ Remove Country Code (+{country_code})",
+                callback_data=f"remove_code_{country_code}"
+            )]
+            keyboard.append(row)
+        else:
+            keyboard.append([InlineKeyboardButton(
+                f"➕ Add Country Code (+{country_code})",
+                callback_data=f"add_code_{country_code}"
+            )])
+
+    # + চিহ্ন toggle বাটন (code থাকুক বা না থাকুক)
+    if has_plus:
+        keyboard.append([InlineKeyboardButton("➖ Remove +", callback_data="remove_plus")])
+    elif code_embedded:
+        # code আছে কিন্তু + নেই — + যোগ করার অপশন
+        keyboard.append([InlineKeyboardButton("➕ Add +", callback_data="add_plus")])
+
+    return keyboard
+    return number
+
+
 # ══════════════════════════════════════════════
 #  USER COMMANDS
 # ══════════════════════════════════════════════
@@ -526,33 +587,25 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
     )
 
     country_code = selected.get("country_code", "")
+
+    # ══ Country-specific fix (e.g. Malaysia 600→60) ══
+    numbers = _post_process_numbers(numbers, country_code)
+
     context.user_data["last_numbers"] = "\n".join(numbers)
     context.user_data["country_code"] = country_code
 
-    # ══ Smart detect: Lamix থেকে আসা নম্বরে code আগে থেকেই আছে কিনা ══
-    # যেমন Sri Lanka range এ 94760154688 → code=94 → starts with "94" → already embedded
+    # ══ Smart detect ══
     code_already_in = (
         bool(country_code) and
         len(numbers) > 0 and
         all(_num_has_code(n, country_code) for n in numbers)
     )
+    has_plus = len(numbers) > 0 and all(n.startswith("+") for n in numbers)
     context.user_data["code_embedded"] = code_already_in
+    context.user_data["has_plus"] = has_plus
 
     numbers_text = "\n".join([f"`{n}`" for n in numbers])
-    keyboard = []
-    if country_code:
-        if code_already_in:
-            # নম্বরে code আছে → Remove বাটন দেখাও
-            keyboard.append([InlineKeyboardButton(
-                f"➖ Remove Country Code (+{country_code})",
-                callback_data=f"remove_code_{country_code}"
-            )])
-        else:
-            # নম্বরে code নেই → Add বাটন দেখাও
-            keyboard.append([InlineKeyboardButton(
-                f"➕ Add Country Code (+{country_code})",
-                callback_data=f"add_code_{country_code}"
-            )])
+    keyboard = _build_number_buttons(country_code, code_already_in, has_plus)
 
     await update.message.reply_text(
         f"📱 *Allocated Numbers ({len(numbers)}):*\n\n{numbers_text}",
@@ -714,11 +767,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ══════════════════════════════════════════════
-    #  ADD COUNTRY CODE
-    #  ✅ FIX: নম্বরে code already আছে কিনা smart detect করে।
-    #  - already থাকলে: strip করে plain রাখো, তারপর +code যোগ করো
-    #  - না থাকলে: সরাসরি +code যোগ করো
-    #  ডাবল হওয়ার কোনো সুযোগ নেই।
+    #  ADD COUNTRY CODE (+code যোগ)
     # ══════════════════════════════════════════════
     if data.startswith("add_code_"):
         code = data[len("add_code_"):]
@@ -728,14 +777,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             l = l.strip()
             if not l:
                 continue
-            # যদি code আগে থেকেই আছে (যেকোনো রূপে) → strip করে নতুন করে লাগাও
             plain = _strip_code(l, code)
             lines.append(f"+{code}{plain}")
 
         context.user_data["last_numbers"] = "\n".join(lines)
         context.user_data["code_embedded"] = True
+        context.user_data["has_plus"] = True
         nums_md = "\n".join([f"`{n}`" for n in lines])
-        keyboard = [[InlineKeyboardButton(f"➖ Remove Country Code (+{code})", callback_data=f"remove_code_{code}")]]
+        keyboard = _build_number_buttons(code, True, True)
         await query.edit_message_text(
             f"📱 *Allocated Numbers ({len(lines)}):*\n\n{nums_md}",
             parse_mode="Markdown",
@@ -743,7 +792,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Remove Country Code ──
+    # ── Remove Country Code (code + + দুটোই সরায়) ──
     if data.startswith("remove_code_"):
         code = data[len("remove_code_"):]
         numbers_text = context.user_data.get("last_numbers", "")
@@ -756,8 +805,53 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.user_data["last_numbers"] = "\n".join(lines)
         context.user_data["code_embedded"] = False
+        context.user_data["has_plus"] = False
         nums_md = "\n".join([f"`{n}`" for n in lines])
-        keyboard = [[InlineKeyboardButton(f"➕ Add Country Code (+{code})", callback_data=f"add_code_{code}")]]
+        keyboard = _build_number_buttons(code, False, False)
+        await query.edit_message_text(
+            f"📱 *Allocated Numbers ({len(lines)}):*\n\n{nums_md}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
+    # ── Remove + only (country code রেখে শুধু + সরায়) ──
+    if data == "remove_plus":
+        code = context.user_data.get("country_code", "")
+        numbers_text = context.user_data.get("last_numbers", "")
+        lines = []
+        for l in numbers_text.strip().split("\n"):
+            l = l.strip()
+            if not l:
+                continue
+            lines.append(_strip_plus(l))  # শুধু + সরায়
+
+        context.user_data["last_numbers"] = "\n".join(lines)
+        context.user_data["has_plus"] = False
+        nums_md = "\n".join([f"`{n}`" for n in lines])
+        keyboard = _build_number_buttons(code, context.user_data.get("code_embedded", False), False)
+        await query.edit_message_text(
+            f"📱 *Allocated Numbers ({len(lines)}):*\n\n{nums_md}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
+    # ── Add + only (শুধু + যোগ করে, code ছাড়া) ──
+    if data == "add_plus":
+        code = context.user_data.get("country_code", "")
+        numbers_text = context.user_data.get("last_numbers", "")
+        lines = []
+        for l in numbers_text.strip().split("\n"):
+            l = l.strip()
+            if not l:
+                continue
+            lines.append(f"+{l}" if not l.startswith("+") else l)
+
+        context.user_data["last_numbers"] = "\n".join(lines)
+        context.user_data["has_plus"] = True
+        nums_md = "\n".join([f"`{n}`" for n in lines])
+        keyboard = _build_number_buttons(code, context.user_data.get("code_embedded", False), True)
         await query.edit_message_text(
             f"📱 *Allocated Numbers ({len(lines)}):*\n\n{nums_md}",
             parse_mode="Markdown",
