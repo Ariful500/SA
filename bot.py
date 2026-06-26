@@ -3,7 +3,7 @@ bot.py — SA SMS WORK Bot মেইন ফাইল
 """
 import logging
 import asyncio
-from telegram import Update, BotCommand, BotCommandScopeChat
+from telegram import Update, BotCommand, BotCommandScopeChat, BotCommandScopeAllGroupChats
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -74,11 +74,17 @@ _ADMIN_CMDS = _USER_CMDS + [
     BotCommand("userlist",   "সব ইউজার তালিকা"),
 ]
 
+# গ্রুপ চ্যাটে শুধু /leaderboard কমান্ডটাই দেখানো ও কাজ করানো হবে
+_GROUP_CMDS = [
+    BotCommand("leaderboard", "SMS র‍্যাংকিং"),
+]
+
 
 async def post_init(app: Application):
     await init_db()
     await app.bot.set_my_commands(_USER_CMDS)
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
+    await app.bot.set_my_commands(_GROUP_CMDS, scope=BotCommandScopeAllGroupChats())
 
     # bot start হওয়ার সাথে সাথে Lamix login
     session = await asyncio.to_thread(lamix._do_login)
@@ -99,28 +105,35 @@ async def post_init(app: Application):
 def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
+    # ══════════════════════════════════════════════
+    #  গ্রুপ চ্যাটে শুধু /leaderboard কাজ করবে,
+    #  বাকি সব কমান্ড ও টেক্সট মেসেজ চুপ থাকবে (no reply)।
+    #  প্রাইভেট (DM) চ্যাটে সবকিছু আগের মতোই কাজ করবে।
+    # ══════════════════════════════════════════════
+    PRIVATE_ONLY = filters.ChatType.PRIVATE
+
     # User
-    app.add_handler(CommandHandler("start",    start_command))
-    app.add_handler(CommandHandler("link",     link_command))
-    app.add_handler(CommandHandler("unlink",   unlink_command))
-    app.add_handler(CommandHandler("account",  account_command))
-    app.add_handler(CommandHandler("add_nums", add_nums_command))
-    app.add_handler(CommandHandler("cancel",   cancel_command))
+    app.add_handler(CommandHandler("start",    start_command,    filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("link",     link_command,     filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("unlink",   unlink_command,   filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("account",  account_command,  filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("add_nums", add_nums_command, filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("cancel",   cancel_command,   filters=PRIVATE_ONLY))
 
     # Admin
-    app.add_handler(CommandHandler("refresh",    refresh_command))
-    app.add_handler(CommandHandler("addlimit",   addlimit_command))
-    app.add_handler(CommandHandler("reset",      reset_command))
-    app.add_handler(CommandHandler("leaderboard",leaderboard_command))
-    app.add_handler(CommandHandler("fetchlimit", fetchlimit_command))
-    app.add_handler(CommandHandler("broadcast",  broadcast_command))
-    app.add_handler(CommandHandler("ban",        ban_command))
-    app.add_handler(CommandHandler("unban",      unban_command))
-    app.add_handler(CommandHandler("userlist",   userlist_command))
+    app.add_handler(CommandHandler("refresh",    refresh_command,    filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("addlimit",   addlimit_command,   filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("reset",      reset_command,      filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("leaderboard",leaderboard_command))  # গ্রুপ + প্রাইভেট দুটোতেই কাজ করবে
+    app.add_handler(CommandHandler("fetchlimit", fetchlimit_command, filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("broadcast",  broadcast_command,  filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("ban",        ban_command,        filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("unban",      unban_command,      filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("userlist",   userlist_command,   filters=PRIVATE_ONLY))
 
-    # Callback & Text
-    app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    # Callback & Text — শুধু প্রাইভেট চ্যাটে
+    app.add_handler(CallbackQueryHandler(handle_callback))  # callback সাধারণত DM থেকেই আসা বাটনের, তাই unrestricted রাখা হয়েছে
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & PRIVATE_ONLY, handle_text))
 
     # Scheduler
     scheduler = AsyncIOScheduler()
