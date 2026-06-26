@@ -9,6 +9,7 @@ from database import (
     update_usage, reset_all_limits, reset_user_limit, add_user_limit,
     ban_user, unban_user, get_all_users, get_leaderboard, get_total_sms,
     is_username_taken, get_user_by_telegram_username, reset_member,
+    get_daily_limit, get_max_per_order, set_daily_limit, set_max_per_order,
 )
 import lamix
 
@@ -271,12 +272,19 @@ async def fetchlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
         return
+    current_daily_limit = await get_daily_limit()
+    current_max_per_order = await get_max_per_order()
+    keyboard = [
+        [InlineKeyboardButton("✏️ Daily Limit বদলান", callback_data="edit_daily_limit")],
+        [InlineKeyboardButton("✏️ Max Per Order বদলান", callback_data="edit_max_per_order")],
+    ]
     await update.message.reply_text(
         f"⚙️ *Limit Settings*\n\n"
-        f"📊 Daily Limit: *{DAILY_LIMIT}*\n"
+        f"📊 Daily Limit: *{current_daily_limit}*\n"
         f"⏰ Auto Reset: সকাল *৬:০০ AM*\n"
-        f"🔢 Max per order: *{MAX_PER_ORDER}*",
+        f"🔢 Max per order: *{current_max_per_order}*",
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -505,6 +513,44 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
 
+    # ── New Daily Limit input (Admin) ──
+    if context.user_data.get("waiting_for_new_daily_limit"):
+        context.user_data.clear()
+        try:
+            new_limit = int(text)
+            if new_limit < 1:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("❌ ১ বা তার বেশি একটা সংখ্যা দিন।")
+            return
+        affected = await set_daily_limit(new_limit)
+        await update.message.reply_text(
+            f"✅ *Daily Limit বদলানো হয়েছে!*\n\n"
+            f"📊 নতুন Daily Limit: *{new_limit}*\n"
+            f"👥 {affected} জন ইউজারের লিমিট এখনই আপডেট হয়েছে।",
+            parse_mode="Markdown",
+        )
+        return
+
+    # ── New Max Per Order input (Admin) ──
+    if context.user_data.get("waiting_for_new_max_per_order"):
+        context.user_data.clear()
+        try:
+            new_max = int(text)
+            if new_max < 1:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("❌ ১ বা তার বেশি একটা সংখ্যা দিন।")
+            return
+        await set_max_per_order(new_max)
+        await update.message.reply_text(
+            f"✅ *Max Per Order বদলানো হয়েছে!*\n\n"
+            f"🔢 নতুন Max Per Order: *{new_max}*\n"
+            f"⏰ পরের অর্ডার থেকেই কার্যকর হবে।",
+            parse_mode="Markdown",
+        )
+        return
+
     # ── Username input ──
     if context.user_data.get("waiting_for_username"):
         context.user_data.clear()
@@ -572,6 +618,7 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
     user = await get_user(user_id)
     text = update.message.text.strip()
     selected = context.user_data.get("selected_range")
+    max_per_order = await get_max_per_order()
 
     try:
         quantity = int(text)
@@ -579,8 +626,8 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("❌ সংখ্যা লিখুন। উদাহরণ: 10")
         return
 
-    if quantity < 1 or quantity > MAX_PER_ORDER:
-        await update.message.reply_text(f"❌ ১ থেকে {MAX_PER_ORDER} এর মধ্যে সংখ্যা দিন।")
+    if quantity < 1 or quantity > max_per_order:
+        await update.message.reply_text(f"❌ ১ থেকে {max_per_order} এর মধ্যে সংখ্যা দিন।")
         return
 
     remaining = user["daily_limit"] - user["daily_used"]
@@ -724,6 +771,42 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ ইউজার পাওয়া যায়নি (হয়তো আগেই রিসেট হয়েছে)।")
         return
 
+    # ── Edit Daily Limit (Admin) ──
+    if data == "edit_daily_limit":
+        if user_id != ADMIN_ID:
+            await query.answer("🚫 শুধু অ্যাডমিন পারবেন।")
+            return
+        context.user_data.clear()
+        context.user_data["waiting_for_new_daily_limit"] = True
+        current = await get_daily_limit()
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
+        await query.edit_message_text(
+            f"📊 *বর্তমান Daily Limit:* {current}\n\n"
+            f"নতুন Daily Limit সংখ্যা পাঠান:\n"
+            f"⚠️ এটি সবার (পুরনো ইউজার সহ) লিমিট এখনই বদলে দেবে।",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
+    # ── Edit Max Per Order (Admin) ──
+    if data == "edit_max_per_order":
+        if user_id != ADMIN_ID:
+            await query.answer("🚫 শুধু অ্যাডমিন পারবেন।")
+            return
+        context.user_data.clear()
+        context.user_data["waiting_for_new_max_per_order"] = True
+        current = await get_max_per_order()
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
+        await query.edit_message_text(
+            f"🔢 *বর্তমান Max Per Order:* {current}\n\n"
+            f"নতুন Max Per Order সংখ্যা পাঠান:\n"
+            f"⚠️ এটি পরের অর্ডার থেকেই কার্যকর হবে।",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
     # ── Browse Ranges ──
     if data == "add_nums":
         if not user:
@@ -764,11 +847,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data["selected_range"] = selected
         context.user_data["waiting_for_quantity"] = True
+        max_per_order = await get_max_per_order()
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         await query.edit_message_text(
             f"📦 *{selected['name']}*\n"
             f"Available: {selected.get('available', 0)} ✅\n\n"
-            f"🔢 কতটি নম্বর চান? (১–{MAX_PER_ORDER})\n"
+            f"🔢 কতটি নম্বর চান? (১–{max_per_order})\n"
             f"সংখ্যা পাঠান:",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
