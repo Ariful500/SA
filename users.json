@@ -1,13 +1,1 @@
-{
-  "1053087734": {
-    "user_id": 1053087734,
-    "username": "SA_admin",
-    "telegram_username": "Napa_Ex",
-    "client_id": "160296",
-    "daily_used": 0,
-    "daily_limit": 120,
-    "total_allocated": 0,
-    "is_banned": false,
-    "created_at": "2026-06-26T06:02:19.580196"
-  }
-}
+{}
