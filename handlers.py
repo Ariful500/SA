@@ -496,12 +496,18 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
     await update_usage(user_id, len(numbers))
     updated_user = await get_user(user_id)
 
+    # পুরো quantity না পেলে ব্যবহারকারীকে জানিয়ে দেওয়া হচ্ছে
+    shortfall_note = ""
+    if len(numbers) < quantity:
+        shortfall_note = f"\n⚠️ চাওয়া হয়েছিল *{quantity}*, পাওয়া গেছে *{len(numbers)}*"
+
     await update.message.reply_text(
         f"✅ *Order Created Successfully*\n\n"
         f"📦 Range: *{selected['name']}*\n"
         f"🔢 Quantity: *{len(numbers)}*\n"
         f"💳 Payterm: *{selected.get('payterm', 'Weekly')}*\n"
-        f"💰 Payout: *${selected.get('payout', '0.01')}*\n\n"
+        f"💰 Payout: *${selected.get('payout', '0.01')}*"
+        f"{shortfall_note}\n\n"
         f"📊 {updated_user['daily_used']}/{updated_user['daily_limit']} used today",
         parse_mode="Markdown",
     )
@@ -675,36 +681,50 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── Add Country Code ──
+    # ✅ FIX: আগে এখানে প্রতিবার `query.message.reply_text` দিয়ে নতুন মেসেজ
+    # পাঠানো হতো (পুরনো মেসেজটা edit হতো না), এবং দ্বিতীয়বার চাপলে কোড আবার
+    # যোগ হয়ে ডাবল হয়ে যেত। এখন: (১) যেই লাইনে আগে থেকেই code আছে সেটা স্কিপ
+    # করা হয়, (২) একই মেসেজ edit করা হয় (নতুন মেসেজ পাঠানো হয় না)।
     if data.startswith("add_code_"):
         code = data[len("add_code_"):]
         numbers_text = context.user_data.get("last_numbers", "")
-        lines = [f"+{code}{l.strip()}" for l in numbers_text.strip().split("\n") if l.strip()]
+        lines = []
+        for l in numbers_text.strip().split("\n"):
+            l = l.strip()
+            if not l:
+                continue
+            if l.startswith(f"+{code}"):
+                lines.append(l)  # ইতিমধ্যে কোড আছে, আবার যোগ করা হচ্ছে না
+            else:
+                lines.append(f"+{code}{l}")
         context.user_data["last_numbers"] = "\n".join(lines)
         nums_md = "\n".join([f"`{n}`" for n in lines])
         keyboard = [[InlineKeyboardButton("➖ Remove Country Code", callback_data=f"remove_code_{code}")]]
-        await query.message.reply_text(
-            f"📱 *Numbers ({len(lines)}):*\n\n{nums_md}",
+        await query.edit_message_text(
+            f"📱 *Allocated Numbers ({len(lines)}):*\n\n{nums_md}",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         return
 
     # ── Remove Country Code ──
-    if data.startswith("remove_code"):
+    if data.startswith("remove_code_"):
+        code = data[len("remove_code_"):]
         numbers_text = context.user_data.get("last_numbers", "")
-        code = context.user_data.get("country_code", "")
         lines = []
         for l in numbers_text.strip().split("\n"):
             l = l.strip()
+            if not l:
+                continue
             if l.startswith(f"+{code}"):
-                lines.append(l[len(code)+1:])
+                lines.append(l[len(code) + 1:])
             else:
                 lines.append(l)
         context.user_data["last_numbers"] = "\n".join(lines)
         nums_md = "\n".join([f"`{n}`" for n in lines])
         keyboard = [[InlineKeyboardButton(f"➕ Add Country Code (+{code})", callback_data=f"add_code_{code}")]]
-        await query.message.reply_text(
-            f"📱 *Numbers ({len(lines)}):*\n\n{nums_md}",
+        await query.edit_message_text(
+            f"📱 *Allocated Numbers ({len(lines)}):*\n\n{nums_md}",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
