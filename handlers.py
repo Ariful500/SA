@@ -8,6 +8,7 @@ from database import (
     get_user, add_user, unlink_user,
     update_usage, reset_all_limits, reset_user_limit, add_user_limit,
     ban_user, unban_user, get_all_users, get_leaderboard, get_total_sms,
+    is_username_taken,
 )
 import lamix
 
@@ -21,7 +22,6 @@ def is_admin(user_id: int) -> bool:
 
 
 async def _check_linked(update: Update) -> bool:
-    """ইউজার লিঙ্ক ও ব্যান চেক। False হলে রিপ্লাই দেওয়া হয়েছে।"""
     user_id = update.effective_user.id
     user = await get_user(user_id)
     if not user:
@@ -393,19 +393,39 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Username input ──
     if context.user_data.get("waiting_for_username"):
         context.user_data.clear()
+        lamix_username = text.strip()
+
+        # ── ১. Username আগে নেওয়া আছে কিনা চেক ──
+        if await is_username_taken(lamix_username):
+            keyboard = [[InlineKeyboardButton("🔗 অন্য Username দিন", callback_data="link")]]
+            await update.message.reply_text(
+                f"❌ *এই username টি অন্য কেউ ব্যবহার করছে!*\n\n"
+                f"`{lamix_username}` ইতিমধ্যে লিঙ্ক করা আছে।\n"
+                f"এডমিনের দেওয়া আপনার নিজের username দিন।",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            return
+
+        # ── ২. Lamix এ verify ──
         await update.message.reply_text("⏳ যাচাই করা হচ্ছে...")
-        client_id, ok = await lamix.verify_username_async(text)
+        client_id, ok = await lamix.verify_username_async(lamix_username)
+
         if ok:
             tg_username = update.effective_user.username or str(user_id)
-            await add_user(user_id, tg_username, text, client_id)
+            await add_user(user_id, tg_username, lamix_username, client_id)
             await update.message.reply_text(
-                f"✅ *Successfully linked!*\n\nAccount: *{text}*\nClient ID: *{client_id}*\n\nএখন /add\\_nums দিয়ে নম্বর নিন।",
-                parse_mode="MarkdownV2",
+                f"✅ *সফলভাবে লিঙ্ক হয়েছে!*\n\n"
+                f"👤 Lamix Account: *{lamix_username}*\n"
+                f"🆔 Client ID: `{client_id}`\n\n"
+                f"এখন /add\_nums দিয়ে নম্বর নিন। 🎉",
+                parse_mode="Markdown",
             )
         else:
-            keyboard = [[InlineKeyboardButton("🔗 Try Again", callback_data="link")]]
+            keyboard = [[InlineKeyboardButton("🔗 আবার চেষ্টা করুন", callback_data="link")]]
             await update.message.reply_text(
-                "❌ *Username সঠিক নয়!*\nএডমিনের দেওয়া সঠিক username দিন।",
+                "❌ *Username সঠিক নয়!*\n\n"
+                "এডমিনের দেওয়া সঠিক Lamix username দিন।",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
@@ -486,7 +506,6 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
         parse_mode="Markdown",
     )
 
-    # নম্বর পাঠাও
     country_code = selected.get("country_code", "")
     numbers_text = "\n".join([f"`{n}`" for n in numbers])
     keyboard = []
@@ -628,7 +647,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("🚫 শুধু অ্যাডমিন পারবেন।")
             return
         parts = data.split("_")
-        action = parts[0]          # approve / deny
+        action = parts[0]
         target_id = int(parts[-1])
         if action == "approve":
             await reset_user_limit(target_id)
