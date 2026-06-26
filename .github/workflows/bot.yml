@@ -3,9 +3,19 @@ name: SA SMS WORK Bot
 on:
   workflow_dispatch:  # শুধু manually চালাবে
 
+# ══════════════════════════════════════════════
+# একই গ্রুপের নতুন রান শুরু হলে আগের চলমান রানটা
+# অটোমেটিক ক্যানসেল হয়ে যাবে (in_progress: true)।
+# এতে একই সময়ে দুটো বট ইনস্ট্যান্স চলার সমস্যা হবে না।
+# ══════════════════════════════════════════════
+concurrency:
+  group: sa-sms-work-bot
+  cancel-in-progress: true
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
 
     steps:
       - name: Checkout code
@@ -34,6 +44,18 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Restore users.json
+        run: |
+          if [ ! -f users.json ]; then
+            echo "{}" > users.json
+            echo "users.json নতুন তৈরি হয়েছে।"
+          else
+            echo "✅ আগের users.json পাওয়া গেছে!"
+          fi
+
+      - name: Run bot
+        run: python bot.py
 
       - name: Restore users.json
         run: |
