@@ -8,7 +8,7 @@ from database import (
     get_user, add_user, unlink_user,
     update_usage, reset_all_limits, reset_user_limit, add_user_limit,
     ban_user, unban_user, get_all_users, get_leaderboard, get_total_sms,
-    is_username_taken,
+    is_username_taken, get_user_by_telegram_username, reset_member,
 )
 import lamix
 
@@ -109,7 +109,11 @@ def _build_number_buttons(country_code: str, code_embedded: bool, has_plus: bool
         keyboard.append([InlineKeyboardButton("➕ Add +", callback_data="add_plus")])
 
     return keyboard
-    return number
+
+
+def _extract_username_arg(raw: str) -> str:
+    """'@username' বা 'username' উভয় ইনপুট থেকে পরিষ্কার username বের করে (@ ছাড়া)।"""
+    return raw.strip().lstrip("@")
 
 
 # ══════════════════════════════════════════════
@@ -216,19 +220,24 @@ async def addlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if len(args) < 2:
         await update.message.reply_text(
-            "⚠️ সঠিকভাবে লিখুন:\n`/addlimit USER_ID AMOUNT`",
+            "⚠️ সঠিকভাবে লিখুন:\n`/addlimit @Username AMOUNT`",
             parse_mode="Markdown",
         )
         return
+
+    tg_username = _extract_username_arg(args[0])
     try:
-        target_id, amount = int(args[0]), int(args[1])
+        amount = int(args[1])
     except ValueError:
-        await update.message.reply_text("❌ USER_ID ও AMOUNT সংখ্যা হতে হবে।")
+        await update.message.reply_text("❌ AMOUNT সংখ্যা হতে হবে।")
         return
-    user = await get_user(target_id)
+
+    user = await get_user_by_telegram_username(tg_username)
     if not user:
-        await update.message.reply_text("❌ ইউজার পাওয়া যায়নি।")
+        await update.message.reply_text(f"❌ `@{tg_username}` ইউজার পাওয়া যায়নি।", parse_mode="Markdown")
         return
+
+    target_id = user["user_id"]
     await add_user_limit(target_id, amount)
     await context.bot.send_message(
         chat_id=target_id,
@@ -236,7 +245,7 @@ async def addlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
     await update.message.reply_text(
-        f"✅ *Limit Added!*\n\n👤 User: `{target_id}`\n➕ Added: *{amount}*",
+        f"✅ *Limit Added!*\n\n👤 User: @{tg_username}\n➕ Added: *{amount}*",
         parse_mode="Markdown",
     )
 
@@ -302,24 +311,23 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
         return
     if not context.args:
-        await update.message.reply_text("⚠️ `/ban USER_ID`", parse_mode="Markdown")
+        await update.message.reply_text("⚠️ `/ban @Username`", parse_mode="Markdown")
         return
-    try:
-        target_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("❌ USER_ID সংখ্যা হতে হবে।")
-        return
-    user = await get_user(target_id)
+
+    tg_username = _extract_username_arg(context.args[0])
+    user = await get_user_by_telegram_username(tg_username)
     if not user:
-        await update.message.reply_text("❌ ইউজার পাওয়া যায়নি।")
+        await update.message.reply_text(f"❌ `@{tg_username}` ইউজার পাওয়া যায়নি।", parse_mode="Markdown")
         return
+
+    target_id = user["user_id"]
     await ban_user(target_id)
     try:
         await context.bot.send_message(chat_id=target_id, text="🚫 আপনাকে ব্যান করা হয়েছে।")
     except Exception:
         pass
     await update.message.reply_text(
-        f"🚫 *User Banned!*\n\n👤 User: `{target_id}`\n🧑 Username: *{user['username']}*",
+        f"🚫 *User Banned!*\n\n👤 User: @{tg_username}\n🧑 Username: *{user['username']}*",
         parse_mode="Markdown",
     )
 
@@ -329,25 +337,55 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
         return
     if not context.args:
-        await update.message.reply_text("⚠️ `/unban USER_ID`", parse_mode="Markdown")
+        await update.message.reply_text("⚠️ `/unban @Username`", parse_mode="Markdown")
         return
-    try:
-        target_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("❌ USER_ID সংখ্যা হতে হবে।")
-        return
-    user = await get_user(target_id)
+
+    tg_username = _extract_username_arg(context.args[0])
+    user = await get_user_by_telegram_username(tg_username)
     if not user:
-        await update.message.reply_text("❌ ইউজার পাওয়া যায়নি।")
+        await update.message.reply_text(f"❌ `@{tg_username}` ইউজার পাওয়া যায়নি।", parse_mode="Markdown")
         return
+
+    target_id = user["user_id"]
     await unban_user(target_id)
     try:
         await context.bot.send_message(chat_id=target_id, text="✅ ব্যান তুলে নেওয়া হয়েছে।")
     except Exception:
         pass
     await update.message.reply_text(
-        f"✅ *User Unbanned!*\n\n👤 User: `{target_id}`\n🧑 Username: *{user['username']}*",
+        f"✅ *User Unbanned!*\n\n👤 User: @{tg_username}\n🧑 Username: *{user['username']}*",
         parse_mode="Markdown",
+    )
+
+
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/reset @Username — ইউজারের সব ডেটা (লিমিট, ইউসেজ, লিঙ্ক) মুছে দেয়। আবার /link করতে হবে।"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
+        return
+    if not context.args:
+        await update.message.reply_text("⚠️ `/reset @Username`", parse_mode="Markdown")
+        return
+
+    tg_username = _extract_username_arg(context.args[0])
+    user = await get_user_by_telegram_username(tg_username)
+    if not user:
+        await update.message.reply_text(f"❌ `@{tg_username}` ইউজার পাওয়া যায়নি।", parse_mode="Markdown")
+        return
+
+    target_id = user["user_id"]
+    keyboard = [[
+        InlineKeyboardButton("✅ Confirm Reset", callback_data=f"confirm_reset_{target_id}"),
+        InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+    ]]
+    await update.message.reply_text(
+        f"⚠️ *@{tg_username}* কে সম্পূর্ণ রিসেট করবেন?\n\n"
+        f"🧑 Lamix Username: *{user['username']}*\n"
+        f"📊 Used: {user['daily_used']}/{user['daily_limit']}\n"
+        f"🔄 Total Allocated: {user['total_allocated']}\n\n"
+        f"⚠️ এটি করলে তার লিঙ্ক, লিমিট, ইউসেজ — সবকিছু মুছে যাবে। তাকে আবার /link করতে হবে।",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -662,6 +700,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "confirm_unlink":
         await unlink_user(user_id)
         await query.edit_message_text("✅ অ্যাকাউন্ট আনলিঙ্ক হয়েছে।")
+        return
+
+    # ── Confirm Reset (Admin) ──
+    if data.startswith("confirm_reset_"):
+        if user_id != ADMIN_ID:
+            await query.answer("🚫 শুধু অ্যাডমিন পারবেন।")
+            return
+        target_id = int(data[len("confirm_reset_"):])
+        target_user = await get_user(target_id)
+        removed = await reset_member(target_id)
+        if removed:
+            try:
+                await context.bot.send_message(
+                    chat_id=target_id,
+                    text="♻️ আপনাকে রিসেট করা হয়েছে। নতুন করে /link দিয়ে অ্যাকাউন্ট কানেক্ট করুন।",
+                )
+            except Exception:
+                pass
+            tg_uname = removed.get("telegram_username", str(target_id))
+            await query.edit_message_text(f"✅ *@{tg_uname}* সম্পূর্ণ রিসেট করা হয়েছে।", parse_mode="Markdown")
+        else:
+            await query.edit_message_text("❌ ইউজার পাওয়া যায়নি (হয়তো আগেই রিসেট হয়েছে)।")
         return
 
     # ── Browse Ranges ──
