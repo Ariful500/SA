@@ -76,6 +76,29 @@ async def get_user(user_id: int) -> dict | None:
 
 
 # ══════════════════════════════════════════════
+#  GET USER BY TELEGRAM USERNAME
+#  (/addlimit, /ban, /unban, /reset কমান্ডে @Username ব্যবহারের জন্য)
+# ══════════════════════════════════════════════
+
+async def get_user_by_telegram_username(telegram_username: str) -> dict | None:
+    """
+    telegram_username — '@' চিহ্ন থাকুক বা না থাকুক, উভয়ই কাজ করবে।
+    Telegram username case-insensitive, তাই lower() দিয়ে compare করা হয়েছে।
+    """
+    clean_username = telegram_username.lstrip("@").lower()
+
+    def _do():
+        data = _load()
+        for user in data.values():
+            tg_uname = (user.get("telegram_username") or "").lower()
+            if tg_uname == clean_username:
+                return user
+        return None
+
+    return await asyncio.to_thread(_do)
+
+
+# ══════════════════════════════════════════════
 #  USERNAME TAKEN CHECK
 # ══════════════════════════════════════════════
 
@@ -205,6 +228,23 @@ async def unban_user(user_id: int):
 
 
 # ══════════════════════════════════════════════
+#  RESET MEMBER (পুরো ডেটা মুছে দেয় — unlink এর মতোই)
+#  /reset @Username কমান্ডের জন্য
+# ══════════════════════════════════════════════
+
+async def reset_member(user_id: int):
+    """ইউজারের সব ডেটা (লিমিট, ইউসেজ, লিঙ্ক) মুছে দেয়। আবার /link করতে হবে।"""
+    def _do():
+        data = _load()
+        uid = str(user_id)
+        removed = data.pop(uid, None)
+        if removed is not None:
+            _save(data, f"♻️ User fully reset: {uid}")
+        return removed
+    return await asyncio.to_thread(_do)
+
+
+# ══════════════════════════════════════════════
 #  GET ALL USERS
 # ══════════════════════════════════════════════
 
@@ -230,4 +270,3 @@ async def get_leaderboard() -> list[dict]:
 async def get_total_sms() -> int:
     data = await asyncio.to_thread(_load)
     return sum(u.get("total_allocated", 0) for u in data.values())
-    
