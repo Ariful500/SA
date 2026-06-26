@@ -1,0 +1,34 @@
+name: SA SMS WORK Bot
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create .env file
+        run: |
+          echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" >> .env
+          echo "ADMIN_ID=${{ secrets.ADMIN_ID }}" >> .env
+          echo "LAMIX_API_KEY=${{ secrets.LAMIX_API_KEY }}" >> .env
+          echo "LAMIX_API_URL=${{ secrets.LAMIX_API_URL }}" >> .env
+
+      - name: Run bot
+        run: python bot.py
+        
