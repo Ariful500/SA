@@ -50,5 +50,14 @@ jobs:
             echo "✅ আগের users.json পাওয়া গেছে!"
           fi
 
+      - name: Restore seen_sms.json
+        run: |
+          if [ ! -f seen_sms.json ]; then
+            echo "[]" > seen_sms.json
+            echo "seen_sms.json নতুন তৈরি হয়েছে।"
+          else
+            echo "✅ আগের seen_sms.json পাওয়া গেছে!"
+          fi
+
       - name: Run bot
         run: python bot.py
