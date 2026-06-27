@@ -6,6 +6,7 @@ v5 fix:
 - সব অন্য logic same থেকেছে
 """
 import re
+import asyncio
 import time
 import asyncio
 import requests
@@ -381,8 +382,10 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                     break
             if num_id and number:
                 available.append((num_id, number, payterm_val))
-            if len(available) >= quantity:
-                break
+        # ✅ Random shuffle — সিরিয়াল না, random নম্বর পাবে
+        import random
+        random.shuffle(available)
+        available = available[:quantity]
 
         print(f"[Allocate] '{range_name}' available: {len(available)}, requested: {quantity}")
 
