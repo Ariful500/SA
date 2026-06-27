@@ -6,6 +6,7 @@ load_dotenv()
 # Bot Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
 
 # Lamix Configuration
 LAMIX_URL      = os.getenv("LAMIX_URL")
