@@ -532,3 +532,84 @@ def fetch_active_count(lamix_username: str) -> int:
 
 async def fetch_active_count_async(lamix_username: str) -> int:
     return await asyncio.to_thread(fetch_active_count, lamix_username)
+
+# ══════════════════════════════════════════════
+#  FETCH SMS COUNTS TODAY (লিডারবোর্ডের জন্য)
+# ══════════════════════════════════════════════
+
+def fetch_sms_counts_today() -> dict[str, int]:
+    """আজকের সকাল ৬টা থেকে এখন পর্যন্ত প্রতিটা client এর SMS count"""
+    import datetime
+    s = _get_session()
+    if not s:
+        return {}
+    try:
+        now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+        if now_bd.hour < 6:
+            start_bd = (now_bd - datetime.timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+        else:
+            start_bd = now_bd.replace(hour=6, minute=0, second=0, microsecond=0)
+
+        start_utc = start_bd - datetime.timedelta(hours=6)
+        end_utc = datetime.datetime.utcnow()
+
+        fdate1 = start_utc.strftime("%Y-%m-%d %H:%M:%S")
+        fdate2 = end_utc.strftime("%Y-%m-%d %H:%M:%S")
+
+        params = {
+            "fdate1": fdate1, "fdate2": fdate2,
+            "frange": "", "fclient": "", "fnum": "",
+            "fcli": "", "fgdate": "", "fgmonth": "",
+            "fgrange": "", "fgclient": "", "fgnumber": "",
+            "fgcli": "", "fg": "0",
+            "sEcho": "1", "iColumns": "9",
+            "sColumns": "%2C%2C%2C%2C%2C%2C%2C%2C",
+            "iDisplayStart": "0", "iDisplayLength": "99999",
+            "sSearch": "", "bRegex": "false",
+            "iSortCol_0": "0", "sSortDir_0": "desc",
+            "iSortingCols": "1",
+            "_": str(int(time.time() * 1000)),
+        }
+        for i in range(9):
+            params[f"mDataProp_{i}"] = str(i)
+            params[f"sSearch_{i}"] = ""
+            params[f"bRegex_{i}"] = "false"
+            params[f"bSearchable_{i}"] = "true"
+            params[f"bSortable_{i}"] = "true" if i < 8 else "false"
+
+        resp = s.get(
+            f"{LAMIX_URL}/ints/agent/res/data_smscdr.php",
+            params=params,
+            headers={"Referer": f"{LAMIX_URL}/ints/agent/SMSCDRStats"},
+            timeout=30,
+        )
+
+        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
+            s = _reset_session()
+            if not s:
+                return {}
+            resp = s.get(
+                f"{LAMIX_URL}/ints/agent/res/data_smscdr.php",
+                params=params,
+                headers={"Referer": f"{LAMIX_URL}/ints/agent/SMSCDRStats"},
+                timeout=30,
+            )
+
+        rows = resp.json().get("aaData", [])
+        counts = {}
+        for row in rows:
+            if not isinstance(row[0], str) or not row[0].startswith("20"):
+                continue
+            client = row[4]
+            if client and isinstance(client, str):
+                counts[client] = counts.get(client, 0) + 1
+
+        return counts
+
+    except Exception as e:
+        print(f"[SMSCount] Error: {e}")
+        return {}
+
+
+async def fetch_sms_counts_today_async() -> dict[str, int]:
+    return await asyncio.to_thread(fetch_sms_counts_today)
