@@ -71,8 +71,6 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     import lamix
     import datetime
 
-    await update.message.reply_text("⏳ আজকের SMS স্ক্যান হচ্ছে...")
-
     counts = await lamix.fetch_sms_counts_today_async()
 
     if not counts:
@@ -83,18 +81,18 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     total = sum(c for _, c in sorted_counts)
 
     medals = ["🥇", "🥈", "🥉"]
-    text = "🏆 *SMS Leaderboard \\(আজকের\\)*\n\n"
+    text = "🏆 SMS Leaderboard\n\n"
 
     for i, (client, count) in enumerate(sorted_counts[:20]):
-        masked = (client[:-3] + "\\*\\*\\*") if len(client) > 3 else "\\*\\*\\*"
-        prefix = medals[i] if i < 3 else f"{i+1}\\."
-        text += f"{prefix} `{masked}` — *{count}*\n"
+        masked = (client[:-3] + "***") if len(client) > 3 else "***"
+        prefix = medals[i] if i < 3 else f"{i+1}."
+        text += f"{prefix} {masked} — *{count}*\n"
 
     bd_time = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
     now_str = bd_time.strftime("%I:%M %p")
-    text += f"\n📊 Total SMS: *{total:,}*\n⏰ Updated: {now_str} \\(BD\\)\n🔄 Reset: সকাল ৬:০০ AM"
+    text += f"\n📊 Total SMS: *{total:,}*\n⏰ Updated: {now_str}"
 
-    await update.message.reply_text(text, parse_mode="MarkdownV2")
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 async def fetchlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
