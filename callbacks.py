@@ -471,7 +471,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Limit Reset Request ──
+# ── Limit Reset Request ──
     if data == "request_reset":
         if not user:
             return
