@@ -46,5 +46,18 @@
     "is_banned": false,
     "pending_reset_request": false,
     "created_at": "2026-06-27T13:39:19.010185"
+  },
+  "7377470296": {
+    "user_id": 7377470296,
+    "username": "SA_SHIPON82",
+    "telegram_username": "Gazi78_78",
+    "client_id": "160860",
+    "is_linked": true,
+    "daily_used": 0,
+    "daily_limit": 120,
+    "total_allocated": 0,
+    "is_banned": false,
+    "pending_reset_request": false,
+    "created_at": "2026-06-27T13:41:28.505829"
   }
 }
