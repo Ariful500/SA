@@ -475,3 +475,60 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
 
 async def allocate_numbers_async(client_id: str, range_name: str, quantity: int) -> dict | None:
     return await asyncio.to_thread(allocate_numbers, client_id, range_name, quantity)
+
+# ══════════════════════════════════════════════
+#  FETCH ACTIVE COUNT (ইউজারের currently active numbers)
+# ══════════════════════════════════════════════
+
+def fetch_active_count(lamix_username: str) -> int:
+    s = _get_session()
+    if not s:
+        return 0
+    try:
+        params = _numbers_params(echo="4", length=10000)
+        resp = s.get(
+            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
+            params=params,
+            timeout=30,
+        )
+
+        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
+            s = _reset_session()
+            if not s:
+                return 0
+            resp = s.get(
+                f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
+                params=params,
+                timeout=30,
+            )
+
+        rows = resp.json().get("aaData", [])
+        count = 0
+        for row in rows:
+            if len(row) < 6:
+                continue
+            client_cell = str(row[5])
+            soup = BeautifulSoup(client_cell, "html.parser")
+
+            # unallocate link না থাকলে এটা assigned না
+            if not soup.find("a", id="unallocate"):
+                continue
+
+            # unallocate link বাদ দিয়ে বাকি text = client username
+            for tag in soup.find_all("a"):
+                tag.decompose()
+            client_name = soup.get_text(strip=True)
+
+            if client_name.lower() == lamix_username.lower():
+                count += 1
+
+        print(f"[ActiveCount] {lamix_username}: {count} active numbers")
+        return count
+
+    except Exception as e:
+        print(f"[ActiveCount] Error: {e}")
+        return 0
+
+
+async def fetch_active_count_async(lamix_username: str) -> int:
+    return await asyncio.to_thread(fetch_active_count, lamix_username)
