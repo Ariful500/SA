@@ -460,16 +460,58 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 show_alert=True,
             )
             return
-        keyboard = [[
-            InlineKeyboardButton("✅ Approve", callback_data=f"approve_reset_{user_id}"),
-            InlineKeyboardButton("❌ Deny", callback_data=f"deny_reset_{user_id}"),
-        ]]
+
         raw_uname = update.effective_user.username
         if raw_uname:
             safe_uname = re.sub(r'([_*`\[])', r'\\\1', raw_uname)
             tg_uname = f"@{safe_uname}"
         else:
             tg_uname = str(user_id)
+
+        # Auto-approve চেক
+        from database import get_auto_approve, reset_user_usage
+        auto_approve = await get_auto_approve()
+
+        if auto_approve:
+            await set_pending_reset_request(user_id, True)
+            await query.edit_message_text(
+                "⏳ রিকোয়েস্ট পাঠানো হয়েছে!\n🤖 ১০ সেকেন্ড পর অটো-অ্যাপ্রুভ হবে।"
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=(
+                        f"🤖 *Auto-Approve Reset!*\n\n"
+                        f"👤 {tg_uname}\n"
+                        f"🆔 `{user_id}`\n"
+                        f"📊 {user['daily_used']}/{user['daily_limit']}"
+                    ),
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+            await asyncio.sleep(10)
+            new_limit = await reset_user_usage(user_id)
+            await set_pending_reset_request(user_id, False)
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        f"✅ *Limit Reset!*\n\n"
+                        f"আপনার আজকের ব্যবহার অটো-রিসেট হয়েছে।\n"
+                        f"📊 লিমিট: {new_limit}"
+                    ),
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+            return
+
+        # Manual approve
+        keyboard = [[
+            InlineKeyboardButton("✅ Approve", callback_data=f"approve_reset_{user_id}"),
+            InlineKeyboardButton("❌ Deny", callback_data=f"deny_reset_{user_id}"),
+        ]]
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
