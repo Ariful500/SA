@@ -475,7 +475,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "request_reset":
         if not user:
             return
-    if await has_pending_reset_request(user_id):
+        if await has_pending_reset_request(user_id):
         await query.answer(
             "⏳ আপনার আগের রিকোয়েস্ট এখনো পেন্ডিং আছে। এডমিনের রেসপন্সের জন্য অপেক্ষা করুন।",
             show_alert=True,
