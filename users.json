@@ -5,7 +5,7 @@
     "telegram_username": "Napa_Ex",
     "client_id": "160296",
     "daily_used": 0,
-    "daily_limit": 120,
+    "daily_limit": 1,
     "total_allocated": 50,
     "is_banned": false,
     "created_at": "2026-06-26T06:04:55.281807"
@@ -16,7 +16,7 @@
     "telegram_username": "Shakil_Is",
     "client_id": "160402",
     "daily_used": 0,
-    "daily_limit": 120,
+    "daily_limit": 1,
     "total_allocated": 0,
     "is_banned": false,
     "created_at": "2026-06-26T08:54:16.796248"
@@ -27,7 +27,7 @@
     "telegram_username": "Borntodie1",
     "client_id": "160516",
     "daily_used": 0,
-    "daily_limit": 120,
+    "daily_limit": 1,
     "total_allocated": 20,
     "is_banned": false,
     "created_at": "2026-06-26T11:01:36.916752"
