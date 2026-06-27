@@ -540,7 +540,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "⚠️ রিকোয়েস্ট পাঠাতে সমস্যা হয়েছে।\nএডমিনকে সরাসরি যোগাযোগ করুন।"
         )
-     # ── Add Country Code ──
+        return
+
+    # ── Add Country Code ──
     if data.startswith("add_code_"):
         code = data[len("add_code_"):]
         numbers_text = context.user_data.get("last_numbers", "")
