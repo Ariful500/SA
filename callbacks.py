@@ -294,6 +294,26 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
 #  CALLBACK HANDLER
 # ══════════════════════════════════════════════
 
+async def _auto_approve_reset(context, user_id: int):
+    await asyncio.sleep(10)
+    from database import reset_user_usage, set_pending_reset_request
+    new_limit = await reset_user_usage(user_id)
+    await set_pending_reset_request(user_id, False)
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                f"✅ *Limit Reset সফল!*\n\n"
+                f"🎉 আপনার আজকের লিমিট রিসেট হয়ে গেছে।\n"
+                f"📊 নতুন লিমিট: *{new_limit}*\n\n"
+                f"এখন /add\_nums দিয়ে নম্বর নিন।"
+            ),
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        print(f"[auto_approve] User notify failed: {e}")
+
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
