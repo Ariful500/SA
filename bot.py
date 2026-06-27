@@ -6,6 +6,7 @@ import asyncio
 import os
 import json
 import subprocess
+from collections import Counter
 from telegram import Update, BotCommand, BotCommandScopeChat, BotCommandScopeAllGroupChats
 from telegram.ext import (
     Application,
@@ -19,7 +20,10 @@ from apscheduler.triggers.cron import CronTrigger
 
 from config import BOT_TOKEN, ADMIN_ID, LIMIT_RESET_HOUR, DAILY_LIMIT, GROUP_CHAT_ID
 import lamix
-from database import init_db, reset_all_limits, get_daily_limit
+from database import (
+    init_db, reset_all_limits, get_daily_limit,
+    log_overage, get_user_by_lamix_username,
+)
 from user_commands import (
     start_command, link_command, unlink_command,
     account_command, cancel_command, add_nums_command,
@@ -47,6 +51,7 @@ SHUTDOWN_AFTER_SECONDS = 5 * 3600 + 59 * 60  # 5h 59m
 
 SEEN_SMS_FILE = "seen_sms.json"
 _seen_sms: set[str] = set()
+_number_sms_count: dict[str, int] = {}
 
 
 def _sms_unique_id(row: list) -> str:
@@ -54,24 +59,36 @@ def _sms_unique_id(row: list) -> str:
 
 
 def _load_seen_sms():
-    """JSON ফাইল থেকে seen SMS লোড করো"""
-    global _seen_sms
+    """JSON ফাইল থেকে seen SMS ও per-number count লোড করো"""
+    global _seen_sms, _number_sms_count
     try:
         if os.path.exists(SEEN_SMS_FILE):
             with open(SEEN_SMS_FILE, "r") as f:
                 data = json.load(f)
-                _seen_sms = set(data)
-                logger.info(f"✅ Seen SMS লোড হয়েছে: {len(_seen_sms)}টি")
+                if isinstance(data, dict):
+                    _seen_sms = set(data.get("seen", []))
+                    _number_sms_count = dict(data.get("counts", {}))
+                else:
+                    # পুরনো ফরম্যাট (শুধু লিস্ট) — ব্যাকওয়ার্ড কম্প্যাটিবিলিটি
+                    _seen_sms = set(data)
+                    _number_sms_count = {}
+                logger.info(
+                    f"✅ Seen SMS লোড হয়েছে: {len(_seen_sms)}টি, "
+                    f"Counts: {len(_number_sms_count)}টি নম্বর"
+                )
         else:
             _seen_sms = set()
+            _number_sms_count = {}
     except Exception as e:
         logger.error(f"[SeenSMS] Load error: {e}")
         _seen_sms = set()
+        _number_sms_count = {}
+
 
 def _save_seen_sms():
     try:
         with open(SEEN_SMS_FILE, "w") as f:
-            json.dump(list(_seen_sms), f)
+            json.dump({"seen": list(_seen_sms), "counts": _number_sms_count}, f)
         subprocess.run(["git", "add", SEEN_SMS_FILE], check=False)
         result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
         if result.returncode != 0:
@@ -82,16 +99,16 @@ def _save_seen_sms():
 
 
 def _reset_seen_sms():
-    """সকাল ৬টায় seen SMS রিসেট করো"""
-    global _seen_sms
+    """সকাল ৬টায় seen SMS ও per-number count রিসেট করো"""
+    global _seen_sms, _number_sms_count
     _seen_sms = set()
+    _number_sms_count = {}
     try:
         with open(SEEN_SMS_FILE, "w") as f:
-            json.dump([], f)
+            json.dump({"seen": [], "counts": {}}, f)
     except Exception as e:
         logger.error(f"[SeenSMS] Reset error: {e}")
     logger.info("🔄 SMS seen list রিসেট হয়েছে।")
-
 
 async def sms_monitor_loop(app: Application):
     import datetime
@@ -124,8 +141,11 @@ async def sms_monitor_loop(app: Application):
                     _seen_sms.add(uid)
                     new_rows.append(row)
 
+            new_rows.sort(key=lambda r: str(r[0]))  # পুরনো → নতুন (chronological)
+
+            number_limits = {}
             if new_rows:
-                _save_seen_sms()
+                number_limits = await lamix.fetch_number_limits_async()
 
             for i, row in enumerate(new_rows):
                 try:
@@ -139,25 +159,69 @@ async def sms_monitor_loop(app: Application):
                     cli        = str(row[3])
                     sms_text   = str(row[5])
 
-                    msg = (
-                        f"🔔 নতুন SMS এসেছে!\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"📞 Number : {number}\n"
-                        f"📍 Range  : {range_name}\n"
-                        f"🔖 CLI    : {cli}\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"💬 {sms_text}\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"🕐 {time_str}"
-                    )
+                    _number_sms_count[number] = _number_sms_count.get(number, 0) + 1
+                    today_count = _number_sms_count[number]
+                    info        = number_limits.get(number, {})
+                    max_limit   = info.get("limit")
+                    client_uname = info.get("client")
 
-                    await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg)
+                    if max_limit is not None and today_count > max_limit:
+                        # ── লিমিট ক্রস হয়ে গেছে ──
+                        msg = (
+                            f"⚠️ Limit Exceeded!\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"📞 Number : {number}\n"
+                            f"📍 Range  : {range_name}\n"
+                            f"📊 Today  : {today_count} SMS || Max - {max_limit} SMS\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"🚫 এই নম্বরের আজকের লিমিট শেষ।\n"
+                            f"অন্য নম্বর ব্যবহার করুন।\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"🕐 {time_str}"
+                        )
+                        await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg)
+
+                        if client_uname:
+                            await log_overage(client_uname, range_name)
+                            target_user = await get_user_by_lamix_username(client_uname)
+                            if target_user:
+                                try:
+                                    await app.bot.send_message(
+                                        chat_id=target_user["user_id"],
+                                        text=(
+                                            f"⚠️ আপনার নম্বরের লিমিট শেষ!\n\n"
+                                            f"📞 Number : {number}\n"
+                                            f"📊 আজকে এসেছে : {today_count} SMS (Max: {max_limit})\n\n"
+                                            f"এই নম্বরে আর নতুন SMS কাউন্ট হবে না।\n"
+                                            f"দয়া করে /add_nums দিয়ে নতুন নম্বর নিন।"
+                                        ),
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"[Overage DM] Failed: {e}")
+                    else:
+                        max_text = f"{max_limit} SMS" if max_limit is not None else "N/A"
+                        msg = (
+                            f"🔔 নতুন SMS এসেছে!\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"📞 Number : {number}\n"
+                            f"📍 Range  : {range_name}\n"
+                            f"🔖 CLI    : {cli}\n"
+                            f"📊 Today  : {today_count} SMS || Max - {max_text}\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"💬 {sms_text}\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"🕐 {time_str}"
+                        )
+                        await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg)
 
                     if (i + 1) % 25 == 0:
                         await asyncio.sleep(1)
 
                 except Exception as e:
                     logger.error(f"[SMS Monitor] Send error: {e}")
+
+            if new_rows:
+                _save_seen_sms()  # এই ৫-সেকেন্ড ব্যাচের সব নতুন SMS একসাথে সেভ
 
         except Exception as e:
             logger.error(f"[SMS Monitor] Loop error: {e}")
