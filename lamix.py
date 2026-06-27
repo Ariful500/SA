@@ -613,3 +613,60 @@ def fetch_sms_counts_today() -> dict[str, int]:
 
 async def fetch_sms_counts_today_async() -> dict[str, int]:
     return await asyncio.to_thread(fetch_sms_counts_today)
+
+def fetch_sms_rows(fdate1: str, fdate2: str) -> list:
+    """নির্দিষ্ট সময়ের মধ্যে সব SMS rows রিটার্ন করে"""
+    s = _get_session()
+    if not s:
+        return []
+    try:
+        params = {
+            "fdate1": fdate1, "fdate2": fdate2,
+            "frange": "", "fclient": "", "fnum": "",
+            "fcli": "", "fgdate": "", "fgmonth": "",
+            "fgrange": "", "fgclient": "", "fgnumber": "",
+            "fgcli": "", "fg": "0",
+            "sEcho": "1", "iColumns": "9",
+            "sColumns": "%2C%2C%2C%2C%2C%2C%2C%2C",
+            "iDisplayStart": "0", "iDisplayLength": "99999",
+            "sSearch": "", "bRegex": "false",
+            "iSortCol_0": "0", "sSortDir_0": "desc",
+            "iSortingCols": "1",
+            "_": str(int(time.time() * 1000)),
+        }
+        for i in range(9):
+            params[f"mDataProp_{i}"] = str(i)
+            params[f"sSearch_{i}"] = ""
+            params[f"bRegex_{i}"] = "false"
+            params[f"bSearchable_{i}"] = "true"
+            params[f"bSortable_{i}"] = "true" if i < 8 else "false"
+
+        resp = s.get(
+            f"{LAMIX_URL}/ints/agent/res/data_smscdr.php",
+            params=params,
+            headers={"Referer": f"{LAMIX_URL}/ints/agent/SMSCDRStats"},
+            timeout=30,
+        )
+
+        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
+            s = _reset_session()
+            if not s:
+                return []
+            resp = s.get(
+                f"{LAMIX_URL}/ints/agent/res/data_smscdr.php",
+                params=params,
+                headers={"Referer": f"{LAMIX_URL}/ints/agent/SMSCDRStats"},
+                timeout=30,
+            )
+
+        rows = resp.json().get("aaData", [])
+        # summary row বাদ দাও
+        return [r for r in rows if isinstance(r[0], str) and r[0].startswith("20")]
+
+    except Exception as e:
+        print(f"[FetchSMS] Error: {e}")
+        return []
+
+
+async def fetch_sms_rows_async(fdate1: str, fdate2: str) -> list:
+    return await asyncio.to_thread(fetch_sms_rows, fdate1, fdate2)
