@@ -22,7 +22,7 @@ from config import BOT_TOKEN, ADMIN_ID, LIMIT_RESET_HOUR, DAILY_LIMIT, GROUP_CHA
 import lamix
 from database import (
     init_db, reset_all_limits, get_daily_limit,
-    log_overage, get_user_by_lamix_username,
+    get_user_by_lamix_username,
 )
 from user_commands import (
     start_command, link_command, unlink_command,
@@ -182,7 +182,6 @@ async def sms_monitor_loop(app: Application):
                         await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg)
 
                         if client_uname:
-                            await log_overage(client_uname, range_name)
                             target_user = await get_user_by_lamix_username(client_uname)
                             if target_user:
                                 try:
