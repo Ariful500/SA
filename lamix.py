@@ -670,3 +670,68 @@ def fetch_sms_rows(fdate1: str, fdate2: str) -> list:
 
 async def fetch_sms_rows_async(fdate1: str, fdate2: str) -> list:
     return await asyncio.to_thread(fetch_sms_rows, fdate1, fdate2)
+
+def fetch_number_limits() -> dict:
+    """প্রতি নম্বরের SD (Daily) লিমিট ও owner client বের করে।
+    রিটার্ন: { number: {"limit": int|None, "client": str|None} }
+    """
+    s = _get_session()
+    if not s:
+        return {}
+    try:
+        params = _numbers_params(echo="5", length=10000)
+        resp = s.get(
+            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
+            params=params,
+            timeout=30,
+        )
+        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
+            s = _reset_session()
+            if not s:
+                return {}
+            resp = s.get(
+                f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
+                params=params,
+                timeout=30,
+            )
+
+        rows = resp.json().get("aaData", [])
+        result = {}
+
+        for row in rows:
+            if len(row) < 6:
+                continue
+            number = str(row[3]).strip()
+            if not number:
+                continue
+
+            # Client owner বের করো
+            client_cell = str(row[5])
+            csoup = BeautifulSoup(client_cell, "html.parser")
+            client_name = None
+            if csoup.find("a", id="unallocate"):
+                for tag in csoup.find_all("a"):
+                    tag.decompose()
+                client_name = csoup.get_text(strip=True) or None
+
+            # SD লিমিট পুরো row জুড়ে স্ক্যান করে বের করো (column position নির্ভরশীল না)
+            limit_val = None
+            for cell in row:
+                text = BeautifulSoup(str(cell), "html.parser").get_text(" ", strip=True)
+                m = re.search(r'SD\s*[:\-]?\s*(\d+)', text, re.IGNORECASE)
+                if m:
+                    limit_val = int(m.group(1))
+                    break
+
+            result[number] = {"limit": limit_val, "client": client_name}
+
+        print(f"[NumberLimits] Parsed {len(result)} numbers")
+        return result
+
+    except Exception as e:
+        print(f"[NumberLimits] Error: {e}")
+        return {}
+
+
+async def fetch_number_limits_async() -> dict:
+    return await asyncio.to_thread(fetch_number_limits)
