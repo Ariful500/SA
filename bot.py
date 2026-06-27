@@ -171,9 +171,9 @@ def main():
     # Scheduler
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
-        auto_reset_limits,
-        CronTrigger(hour=LIMIT_RESET_HOUR, minute=0),
-        args=[app],
+    auto_reset_limits,
+    CronTrigger(hour=LIMIT_RESET_HOUR, minute=0, timezone="Asia/Dhaka"),
+    args=[app],
     )
     scheduler.start()
 
