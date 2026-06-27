@@ -1,4 +1,4 @@
 {
   "daily_limit": 1,
-  "auto_approve": false
+  "auto_approve": true
 }
