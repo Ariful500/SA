@@ -26,6 +26,7 @@ from admin_commands import (
     refresh_command, addlimit_command, leaderboard_command,
     fetchlimit_command, broadcast_command, ban_command,
     unban_command, userlist_command, reset_command,
+    autoapprove_command,
 )
 
 logging.basicConfig(
@@ -101,6 +102,7 @@ _ADMIN_CMDS = _USER_CMDS + [
     BotCommand("ban",        "ইউজার ব্যান"),
     BotCommand("unban",      "ইউজার আনব্যান"),
     BotCommand("userlist",   "সব ইউজার তালিকা"),
+    BotCommand("autoapprove", "Auto-Approve টগল করুন"),
 ]
 
 # গ্রুপ চ্যাটে শুধু /leaderboard কমান্ডটাই দেখানো ও কাজ করানো হবে
@@ -163,6 +165,7 @@ def main():
     app.add_handler(CommandHandler("ban",        ban_command,        filters=PRIVATE_ONLY))
     app.add_handler(CommandHandler("unban",      unban_command,      filters=PRIVATE_ONLY))
     app.add_handler(CommandHandler("userlist",   userlist_command,   filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("autoapprove", autoapprove_command, filters=PRIVATE_ONLY))
 
     # Callback & Text — শুধু প্রাইভেট চ্যাটে
     app.add_handler(CallbackQueryHandler(handle_callback))  # callback সাধারণত DM থেকেই আসা বাটনের, তাই unrestricted রাখা হয়েছে
