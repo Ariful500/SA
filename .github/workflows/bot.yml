@@ -34,6 +34,7 @@ jobs:
           echo "LAMIX_URL=${{ secrets.LAMIX_URL }}" >> .env
           echo "LAMIX_USERNAME=${{ secrets.LAMIX_USERNAME }}" >> .env
           echo "LAMIX_PASSWORD=${{ secrets.LAMIX_PASSWORD }}" >> .env
+          echo "GROUP_CHAT_ID=${{ secrets.GROUP_CHAT_ID }}" >> .env
 
       - name: Setup git for auto-save
         run: |
