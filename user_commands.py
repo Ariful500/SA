@@ -155,6 +155,12 @@ async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _check_linked(update):
         return
     user = await get_user(update.effective_user.id)
+    
+    # Lamix থেকে live count sync করো
+    await update.message.reply_text("⏳ তথ্য লোড হচ্ছে...")
+    from database import sync_total_allocated
+    total = await sync_total_allocated(update.effective_user.id, user["username"])
+    
     keyboard = [[InlineKeyboardButton("❌ Unlink Account", callback_data="confirm_unlink")]]
     await update.message.reply_text(
         f"👤 *Account Information*\n"
@@ -162,7 +168,7 @@ async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🧑 Username: *{user['username']}*\n\n"
         f"📊 *Today's Usage*\n"
         f"• 🔢 Used: *{user['daily_used']}/{user['daily_limit']}*\n"
-        f"• 🔄 Total Allocated: *{user['total_allocated']}*",
+        f"• 🔄 Total Allocated: *{total}*",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
