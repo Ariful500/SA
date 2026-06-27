@@ -11,6 +11,10 @@ from config import DAILY_LIMIT as _DEFAULT_DAILY_LIMIT, MAX_PER_ORDER as _DEFAUL
 DB_FILE = "users.json"
 SETTINGS_FILE = "settings.json"
 
+import threading
+_db_lock = threading.Lock()
+_settings_lock = threading.Lock()
+
 
 # ══════════════════════════════════════════════
 #  GIT SAVE (real-time commit + push)
@@ -52,8 +56,9 @@ def _load() -> dict:
 
 
 def _save(data: dict, git_message: str = "💾 Auto-save: users data updated"):
-    with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    with _db_lock:
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
     _git_save(git_message)
 
 
@@ -68,8 +73,9 @@ def _load_settings() -> dict:
 
 
 def _save_settings(settings: dict, git_message: str = "⚙️ Settings updated"):
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=2)
+    with _settings_lock:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
     try:
         subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
         subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
