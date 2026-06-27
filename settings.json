@@ -1,3 +1,4 @@
 {
-  "daily_limit": 120
+  "daily_limit": 120,
+  "auto_approve": true
 }
