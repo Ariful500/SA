@@ -232,3 +232,19 @@ async def userlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(chunk, parse_mode="Markdown")
     else:
         await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def autoapprove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
+        return
+    from database import get_auto_approve, set_auto_approve
+    current = await get_auto_approve()
+    new_state = not current
+    await set_auto_approve(new_state)
+    state_text = "✅ চালু" if new_state else "❌ বন্ধ"
+    await update.message.reply_text(
+        f"🤖 *Auto-Approve এখন {state_text}!*\n\n"
+        f"{'ON থাকলে Request Limit Reset এ ১০ সেকেন্ড পর অটো রিসেট হবে।' if new_state else 'OFF থাকলে Admin কে manually Approve/Deny করতে হবে।'}",
+        parse_mode="Markdown",
+    )
