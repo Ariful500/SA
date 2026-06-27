@@ -3,7 +3,7 @@ bot.py — SA SMS WORK Bot মেইন ফাইল
 """
 import os
 import json
-import logging
+import subprocess
 import asyncio
 from telegram import Update, BotCommand, BotCommandScopeChat, BotCommandScopeAllGroupChats
 from telegram.ext import (
@@ -67,12 +67,15 @@ def _load_seen_sms():
         logger.error(f"[SeenSMS] Load error: {e}")
         _seen_sms = set()
 
-
 def _save_seen_sms():
-    """seen SMS JSON ফাইলে save করো"""
     try:
         with open(SEEN_SMS_FILE, "w") as f:
             json.dump(list(_seen_sms), f)
+        subprocess.run(["git", "add", SEEN_SMS_FILE], check=False)
+        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
+        if result.returncode != 0:
+            subprocess.run(["git", "commit", "-m", "💾 SMS seen list updated"], check=False)
+            subprocess.run(["git", "push", "origin", "main"], check=False)
     except Exception as e:
         logger.error(f"[SeenSMS] Save error: {e}")
 
