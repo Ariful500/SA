@@ -633,7 +633,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-# ── Approve Reset (Admin) ──
+    # ── Approve Reset (Admin) ──
     if data.startswith("approve_reset_"):
         if user_id != ADMIN_ID:
             await query.answer("🚫 শুধু অ্যাডমিন পারবেন।", show_alert=True)
