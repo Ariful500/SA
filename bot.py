@@ -14,7 +14,7 @@ from telegram.ext import (
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from config import BOT_TOKEN, ADMIN_ID, LIMIT_RESET_HOUR, DAILY_LIMIT
+from config import BOT_TOKEN, ADMIN_ID, LIMIT_RESET_HOUR, DAILY_LIMIT, GROUP_CHAT_ID
 import lamix
 from database import init_db, reset_all_limits, get_daily_limit
 from user_commands import (
@@ -35,14 +35,93 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SHUTDOWN_AFTER_SECONDS = 5 * 3600 + 59 * 60  # 5h 59m
+
+
 # ══════════════════════════════════════════════
-#  AUTO-SHUTDOWN CONFIG
-#  GitHub Actions ফ্রি রানারের hard limit ৬ ঘণ্টা (360 মিনিট)।
-#  তার ১ মিনিট আগেই (৫ ঘণ্টা ৫৯ মিনিট) বট নিজে গ্রেসফুলি বন্ধ হয়ে
-#  exit code 0 দিয়ে বের হবে — তাই GitHub Actions job "Success" দেখাবে,
-#  নিজে নিজে timeout এ কেটে গেলে যেমন "Cancelled/Failed" দেখাতো।
+#  SMS MONITOR
 # ══════════════════════════════════════════════
-SHUTDOWN_AFTER_SECONDS = 5 * 3600 + 59 * 60  # 21540 sec = 5h 59m
+
+_seen_sms: set[str] = set()
+
+
+def _sms_unique_id(row: list) -> str:
+    return f"{row[0]}|{row[2]}|{row[3]}|{str(row[5])[:20]}"
+
+
+def _reset_seen_sms():
+    global _seen_sms
+    _seen_sms = set()
+    logger.info("🔄 SMS seen list রিসেট হয়েছে।")
+
+
+async def sms_monitor_loop(app: Application):
+    import datetime
+    global _seen_sms
+
+    logger.info("📡 SMS Monitor চালু হয়েছে...")
+
+    while True:
+        try:
+            now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+
+            if now_bd.hour < 6:
+                start_bd = (now_bd - datetime.timedelta(days=1)).replace(
+                    hour=6, minute=0, second=0, microsecond=0)
+            else:
+                start_bd = now_bd.replace(hour=6, minute=0, second=0, microsecond=0)
+
+            start_utc = start_bd - datetime.timedelta(hours=6)
+            end_utc = datetime.datetime.utcnow()
+
+            fdate1 = start_utc.strftime("%Y-%m-%d %H:%M:%S")
+            fdate2 = end_utc.strftime("%Y-%m-%d %H:%M:%S")
+
+            rows = await lamix.fetch_sms_rows_async(fdate1, fdate2)
+
+            new_rows = []
+            for row in rows:
+                uid = _sms_unique_id(row)
+                if uid not in _seen_sms:
+                    _seen_sms.add(uid)
+                    new_rows.append(row)
+
+            for i, row in enumerate(new_rows):
+                try:
+                    date_str = str(row[0])
+                    dt_utc = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                    dt_bd = dt_utc + datetime.timedelta(hours=6)
+                    time_str = dt_bd.strftime("%I:%M %p | %d.%m.%y")
+
+                    range_name = str(row[1])
+                    number     = str(row[2])
+                    cli        = str(row[3])
+                    sms_text   = str(row[5])
+
+                    msg = (
+                        f"🔔 নতুন SMS এসেছে!\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"📞 Number : {number}\n"
+                        f"📍 Range  : {range_name}\n"
+                        f"🔖 CLI    : {cli}\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"💬 {sms_text}\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"🕐 {time_str}"
+                    )
+
+                    await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg)
+
+                    if (i + 1) % 25 == 0:
+                        await asyncio.sleep(1)
+
+                except Exception as e:
+                    logger.error(f"[SMS Monitor] Send error: {e}")
+
+        except Exception as e:
+            logger.error(f"[SMS Monitor] Loop error: {e}")
+
+        await asyncio.sleep(5)
 
 
 # ══════════════════════════════════════════════
@@ -60,7 +139,6 @@ async def auto_reset_limits(app: Application):
 
 
 async def auto_shutdown(app: Application):
-    """৫ ঘণ্টা ৫৯ মিনিট পর বট নিজে গ্রেসফুলি বন্ধ হবে।"""
     await asyncio.sleep(SHUTDOWN_AFTER_SECONDS)
     logger.info("⏰ ৫ ঘণ্টা ৫৯ মিনিট পার হয়েছে — বট গ্রেসফুলি বন্ধ হচ্ছে...")
     try:
@@ -74,9 +152,6 @@ async def auto_shutdown(app: Application):
         )
     except Exception as e:
         logger.warning(f"শাটডাউন নোটিস পাঠানো যায়নি: {e}")
-
-    # PTB v20+ এর পাবলিক API — run_polling() কে গ্রেসফুলি থামায়,
-    # যার ফলে main() normally রিটার্ন করে এবং প্রসেস exit code 0 দিয়ে শেষ হয়।
     app.stop_running()
 
 
@@ -93,19 +168,18 @@ _USER_CMDS = [
 ]
 
 _ADMIN_CMDS = _USER_CMDS + [
-    BotCommand("refresh",    "সবার লিমিট রিসেট"),
-    BotCommand("addlimit",   "ইউজারের লিমিট বাড়ান"),
-    BotCommand("reset",      "ইউজার সম্পূর্ণ রিসেট"),
-    BotCommand("leaderboard","SMS র‍্যাংকিং"),
-    BotCommand("fetchlimit", "লিমিট সেটিংস"),
-    BotCommand("broadcast",  "সবাইকে মেসেজ"),
-    BotCommand("ban",        "ইউজার ব্যান"),
-    BotCommand("unban",      "ইউজার আনব্যান"),
-    BotCommand("userlist",   "সব ইউজার তালিকা"),
+    BotCommand("refresh",     "সবার লিমিট রিসেট"),
+    BotCommand("addlimit",    "ইউজারের লিমিট বাড়ান"),
+    BotCommand("reset",       "ইউজার সম্পূর্ণ রিসেট"),
+    BotCommand("leaderboard", "SMS র‍্যাংকিং"),
+    BotCommand("fetchlimit",  "লিমিট সেটিংস"),
+    BotCommand("broadcast",   "সবাইকে মেসেজ"),
+    BotCommand("ban",         "ইউজার ব্যান"),
+    BotCommand("unban",       "ইউজার আনব্যান"),
+    BotCommand("userlist",    "সব ইউজার তালিকা"),
     BotCommand("autoapprove", "Auto-Approve টগল করুন"),
 ]
 
-# গ্রুপ চ্যাটে শুধু /leaderboard কমান্ডটাই দেখানো ও কাজ করানো হবে
 _GROUP_CMDS = [
     BotCommand("leaderboard", "SMS র‍্যাংকিং"),
 ]
@@ -117,7 +191,6 @@ async def post_init(app: Application):
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
     await app.bot.set_my_commands(_GROUP_CMDS, scope=BotCommandScopeAllGroupChats())
 
-    # bot start হওয়ার সাথে সাথে Lamix login
     session = await asyncio.to_thread(lamix._do_login)
     if session:
         logger.info("Lamix Login OK")
@@ -128,9 +201,9 @@ async def post_init(app: Application):
 
     logger.info("DB & Commands initialized")
 
-    # ৫ ঘণ্টা ৫৯ মিনিট পর অটো-শাটডাউন টাইমার চালু (background task)
     asyncio.create_task(auto_shutdown(app))
-    logger.info(f"⏳ Auto-shutdown টাইমার চালু — {SHUTDOWN_AFTER_SECONDS} সেকেন্ড পর বট বন্ধ হবে।")
+    asyncio.create_task(sms_monitor_loop(app))
+    logger.info("⏳ Auto-shutdown ও SMS Monitor চালু হয়েছে।")
 
 
 # ══════════════════════════════════════════════
@@ -140,11 +213,6 @@ async def post_init(app: Application):
 def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
-    # ══════════════════════════════════════════════
-    #  গ্রুপ চ্যাটে শুধু /leaderboard কাজ করবে,
-    #  বাকি সব কমান্ড ও টেক্সট মেসেজ চুপ থাকবে (no reply)।
-    #  প্রাইভেট (DM) চ্যাটে সবকিছু আগের মতোই কাজ করবে।
-    # ══════════════════════════════════════════════
     PRIVATE_ONLY = filters.ChatType.PRIVATE
 
     # User
@@ -156,27 +224,31 @@ def main():
     app.add_handler(CommandHandler("cancel",   cancel_command,   filters=PRIVATE_ONLY))
 
     # Admin
-    app.add_handler(CommandHandler("refresh",    refresh_command,    filters=PRIVATE_ONLY))
-    app.add_handler(CommandHandler("addlimit",   addlimit_command,   filters=PRIVATE_ONLY))
-    app.add_handler(CommandHandler("reset",      reset_command,      filters=PRIVATE_ONLY))
-    app.add_handler(CommandHandler("leaderboard",leaderboard_command))  # গ্রুপ + প্রাইভেট দুটোতেই কাজ করবে
-    app.add_handler(CommandHandler("fetchlimit", fetchlimit_command, filters=PRIVATE_ONLY))
-    app.add_handler(CommandHandler("broadcast",  broadcast_command,  filters=PRIVATE_ONLY))
-    app.add_handler(CommandHandler("ban",        ban_command,        filters=PRIVATE_ONLY))
-    app.add_handler(CommandHandler("unban",      unban_command,      filters=PRIVATE_ONLY))
-    app.add_handler(CommandHandler("userlist",   userlist_command,   filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("refresh",     refresh_command,     filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("addlimit",    addlimit_command,    filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("reset",       reset_command,       filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("leaderboard", leaderboard_command))
+    app.add_handler(CommandHandler("fetchlimit",  fetchlimit_command,  filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("broadcast",   broadcast_command,   filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("ban",         ban_command,         filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("unban",       unban_command,       filters=PRIVATE_ONLY))
+    app.add_handler(CommandHandler("userlist",    userlist_command,    filters=PRIVATE_ONLY))
     app.add_handler(CommandHandler("autoapprove", autoapprove_command, filters=PRIVATE_ONLY))
 
-    # Callback & Text — শুধু প্রাইভেট চ্যাটে
-    app.add_handler(CallbackQueryHandler(handle_callback))  # callback সাধারণত DM থেকেই আসা বাটনের, তাই unrestricted রাখা হয়েছে
+    # Callback & Text
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & PRIVATE_ONLY, handle_text))
 
     # Scheduler
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
-    auto_reset_limits,
-    CronTrigger(hour=LIMIT_RESET_HOUR, minute=0, timezone="Asia/Dhaka"),
-    args=[app],
+        auto_reset_limits,
+        CronTrigger(hour=LIMIT_RESET_HOUR, minute=0, timezone="Asia/Dhaka"),
+        args=[app],
+    )
+    scheduler.add_job(
+        _reset_seen_sms,
+        CronTrigger(hour=6, minute=0, timezone="Asia/Dhaka"),
     )
     scheduler.start()
 
