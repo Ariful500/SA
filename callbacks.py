@@ -476,7 +476,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if auto_approve:
             await set_pending_reset_request(user_id, True)
             await query.edit_message_text(
-                "⏳ রিকোয়েস্ট পাঠানো হয়েছে!\n🤖 ১০ সেকেন্ড পর অটো-অ্যাপ্রুভ হবে।"
+                "✅ রিকোয়েস্ট পাঠানো হয়েছে!\n⏳ এডমিনের রেসপন্সের জন্য অপেক্ষা করুন।"
             )
             try:
                 await context.bot.send_message(
@@ -498,9 +498,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(
                     chat_id=user_id,
                     text=(
-                        f"✅ *Limit Reset!*\n\n"
-                        f"আপনার আজকের ব্যবহার অটো-রিসেট হয়েছে।\n"
-                        f"📊 লিমিট: {new_limit}"
+                        f"✅ *Limit Reset সফল!*\n\n"
+                        f"🎉 আপনার আজকের লিমিট রিসেট হয়ে গেছে।\n"
+                        f"📊 নতুন লিমিট: *{new_limit}*\n\n"
+                        f"এখন /add\_nums দিয়ে নম্বর নিন।"
                     ),
                     parse_mode="Markdown",
                 )
