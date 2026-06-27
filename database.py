@@ -484,3 +484,20 @@ async def get_total_sms() -> int:
     data = await asyncio.to_thread(_load)
     return sum(u.get("total_allocated", 0) for u in data.values())
         
+# ══════════════════════════════════════════════
+#  SYNC TOTAL ALLOCATED (Lamix থেকে live count আপডেট)
+# ══════════════════════════════════════════════
+
+async def sync_total_allocated(user_id: int, lamix_username: str) -> int:
+    import lamix
+    active_count = await lamix.fetch_active_count_async(lamix_username)
+
+    def _do():
+        data = _load()
+        uid = str(user_id)
+        if uid in data:
+            data[uid]["total_allocated"] = active_count
+            _save(data, f"🔄 Total allocated synced: {lamix_username} = {active_count}")
+        return active_count
+
+    return await asyncio.to_thread(_do)
