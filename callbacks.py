@@ -473,6 +473,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── Limit Reset Request ──
     if data == "request_reset":
+        if user_id == ADMIN_ID:
+            await query.answer("🚫 এডমিন নিজে রিকোয়েস্ট করতে পারবেন না।", show_alert=True)
+            return
         if not user:
             return
         if await has_pending_reset_request(user_id):
