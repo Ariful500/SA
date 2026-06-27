@@ -1,6 +1,8 @@
 """
 bot.py — SA SMS WORK Bot মেইন ফাইল
 """
+import os
+import json
 import logging
 import asyncio
 from telegram import Update, BotCommand, BotCommandScopeChat, BotCommandScopeAllGroupChats
@@ -42,6 +44,7 @@ SHUTDOWN_AFTER_SECONDS = 5 * 3600 + 59 * 60  # 5h 59m
 #  SMS MONITOR
 # ══════════════════════════════════════════════
 
+SEEN_SMS_FILE = "seen_sms.json"
 _seen_sms: set[str] = set()
 
 
@@ -49,9 +52,40 @@ def _sms_unique_id(row: list) -> str:
     return f"{row[0]}|{row[2]}|{row[3]}|{str(row[5])[:20]}"
 
 
+def _load_seen_sms():
+    """JSON ফাইল থেকে seen SMS লোড করো"""
+    global _seen_sms
+    try:
+        if os.path.exists(SEEN_SMS_FILE):
+            with open(SEEN_SMS_FILE, "r") as f:
+                data = json.load(f)
+                _seen_sms = set(data)
+                logger.info(f"✅ Seen SMS লোড হয়েছে: {len(_seen_sms)}টি")
+        else:
+            _seen_sms = set()
+    except Exception as e:
+        logger.error(f"[SeenSMS] Load error: {e}")
+        _seen_sms = set()
+
+
+def _save_seen_sms():
+    """seen SMS JSON ফাইলে save করো"""
+    try:
+        with open(SEEN_SMS_FILE, "w") as f:
+            json.dump(list(_seen_sms), f)
+    except Exception as e:
+        logger.error(f"[SeenSMS] Save error: {e}")
+
+
 def _reset_seen_sms():
+    """সকাল ৬টায় seen SMS রিসেট করো"""
     global _seen_sms
     _seen_sms = set()
+    try:
+        with open(SEEN_SMS_FILE, "w") as f:
+            json.dump([], f)
+    except Exception as e:
+        logger.error(f"[SeenSMS] Reset error: {e}")
     logger.info("🔄 SMS seen list রিসেট হয়েছে।")
 
 
@@ -85,6 +119,9 @@ async def sms_monitor_loop(app: Application):
                 if uid not in _seen_sms:
                     _seen_sms.add(uid)
                     new_rows.append(row)
+
+            if new_rows:
+                _save_seen_sms()
 
             for i, row in enumerate(new_rows):
                 try:
@@ -187,6 +224,7 @@ _GROUP_CMDS = [
 
 async def post_init(app: Application):
     await init_db()
+    _load_seen_sms()
     await app.bot.set_my_commands(_USER_CMDS)
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
     await app.bot.set_my_commands(_GROUP_CMDS, scope=BotCommandScopeAllGroupChats())
