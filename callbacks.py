@@ -473,89 +473,74 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Limit Reset Request ──
     if data == "request_reset":
-        if not user:
-            return
-        if await has_pending_reset_request(user_id):
-            await query.answer(
-                "⏳ আপনার আগের রিকোয়েস্ট এখনো পেন্ডিং আছে। এডমিনের রেসপন্সের জন্য অপেক্ষা করুন।",
-                show_alert=True,
-            )
-            return
+    if not user:
+        return
+    if await has_pending_reset_request(user_id):
+        await query.answer(
+            "⏳ আপনার আগের রিকোয়েস্ট এখনো পেন্ডিং আছে। এডমিনের রেসপন্সের জন্য অপেক্ষা করুন।",
+            show_alert=True,
+        )
+        return
 
-        raw_uname = update.effective_user.username
-        if raw_uname:
-            safe_uname = re.sub(r'([_*`\[])', r'\\\1', raw_uname)
-            tg_uname = f"@{safe_uname}"
-        else:
-            tg_uname = str(user_id)
+    raw_uname = update.effective_user.username
+    if raw_uname:
+        safe_uname = re.sub(r'([_*`\[])', r'\\\1', raw_uname)
+        tg_uname = f"@{safe_uname}"
+    else:
+        tg_uname = str(user_id)
 
-        # Auto-approve চেক
-        from database import get_auto_approve, reset_user_usage
-        auto_approve = await get_auto_approve()
+    from database import get_auto_approve
+    auto_approve = await get_auto_approve()
 
-        if auto_approve:
-            await set_pending_reset_request(user_id, True)
-            await query.edit_message_text(
-                "✅ রিকোয়েস্ট পাঠানো হয়েছে!\n⏳ এডমিনের রেসপন্সের জন্য অপেক্ষা করুন।"
-            )
-            try:
-                await context.bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=(
-                        f"🤖 *Auto-Approve Reset!*\n\n"
-                        f"👤 {tg_uname}\n"
-                        f"🆔 `{user_id}`\n"
-                        f"📊 {user['daily_used']}/{user['daily_limit']}"
-                    ),
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                pass
-            await asyncio.sleep(10)
-            new_limit = await reset_user_usage(user_id)
-            await set_pending_reset_request(user_id, False)
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=(
-                        f"✅ *Limit Reset সফল!*\n\n"
-                        f"🎉 আপনার আজকের লিমিট রিসেট হয়ে গেছে।\n"
-                        f"📊 নতুন লিমিট: *{new_limit}*\n\n"
-                        f"এখন /add\_nums দিয়ে নম্বর নিন।"
-                    ),
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                pass
-            return
-
-        # Manual approve
-        keyboard = [[
-            InlineKeyboardButton("✅ Approve", callback_data=f"approve_reset_{user_id}"),
-            InlineKeyboardButton("❌ Deny", callback_data=f"deny_reset_{user_id}"),
-        ]]
+    if auto_approve:
+        await set_pending_reset_request(user_id, True)
+        await query.edit_message_text(
+            "✅ রিকোয়েস্ট পাঠানো হয়েছে!\n⏳ এডমিনের রেসপন্সের জন্য অপেক্ষা করুন।"
+        )
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=(
-                    f"🔔 *Limit Reset Request!*\n\n"
+                    f"🤖 *Auto-Approve Reset!*\n\n"
                     f"👤 {tg_uname}\n"
                     f"🆔 `{user_id}`\n"
                     f"📊 {user['daily_used']}/{user['daily_limit']}"
                 ),
                 parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup(keyboard),
             )
-            await set_pending_reset_request(user_id, True)
-            await query.edit_message_text(
-                "✅ রিকোয়েস্ট পাঠানো হয়েছে!\n⏳ এডমিনের রেসপন্সের জন্য অপেক্ষা করুন।"
-            )
-        except Exception as e:
-            print(f"[request_reset] Admin notify failed: {e}")
-            await query.edit_message_text(
-                "⚠️ রিকোয়েস্ট পাঠাতে সমস্যা হয়েছে।\nএডমিনকে সরাসরি যোগাযোগ করুন।"
-            )
+        except Exception:
+            pass
+        # ✅ background এ 10 সেকেন্ড পরে approve হবে, কিছু block হবে না
+        asyncio.create_task(_auto_approve_reset(context, user_id))
         return
+
+    # Manual approve
+    keyboard = [[
+        InlineKeyboardButton("✅ Approve", callback_data=f"approve_reset_{user_id}"),
+        InlineKeyboardButton("❌ Deny", callback_data=f"deny_reset_{user_id}"),
+    ]]
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                f"🔔 *Limit Reset Request!*\n\n"
+                f"👤 {tg_uname}\n"
+                f"🆔 `{user_id}`\n"
+                f"📊 {user['daily_used']}/{user['daily_limit']}"
+            ),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        await set_pending_reset_request(user_id, True)
+        await query.edit_message_text(
+            "✅ রিকোয়েস্ট পাঠানো হয়েছে!\n⏳ এডমিনের রেসপন্সের জন্য অপেক্ষা করুন।"
+        )
+    except Exception as e:
+        print(f"[request_reset] Admin notify failed: {e}")
+        await query.edit_message_text(
+            "⚠️ রিকোয়েস্ট পাঠাতে সমস্যা হয়েছে।\nএডমিনকে সরাসরি যোগাযোগ করুন।"
+        )
+    return
 
     # ── Admin Approve/Deny ──
     if data == "request_reset":
