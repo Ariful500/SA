@@ -78,13 +78,15 @@ def _load_leaderboard():
         if os.path.exists(LEADERBOARD_FILE):
             with open(LEADERBOARD_FILE, "r") as f:
                 data = json.load(f)
-                _leaderboard_counts = dict(data.get("counts", {}))
+                loaded = dict(data.get("counts", {}))
+                _leaderboard_counts.clear()
+                _leaderboard_counts.update(loaded)
                 logger.info(f"✅ Leaderboard লোড হয়েছে: {len(_leaderboard_counts)} client")
         else:
-            _leaderboard_counts = {}
+            _leaderboard_counts.clear()
     except Exception as e:
         logger.error(f"[Leaderboard] Load error: {e}")
-        _leaderboard_counts = {}
+        _leaderboard_counts.clear()
 
 
 def _load_alltime_leaderboard():
@@ -92,13 +94,15 @@ def _load_alltime_leaderboard():
     try:
         if os.path.exists(ALLTIME_LEADERBOARD_FILE):
             with open(ALLTIME_LEADERBOARD_FILE, "r") as f:
-                _alltime_counts = dict(json.load(f).get("counts", {}))
+                loaded = dict(json.load(f).get("counts", {}))
+                _alltime_counts.clear()
+                _alltime_counts.update(loaded)
                 logger.info(f"✅ All Time Leaderboard লোড হয়েছে: {len(_alltime_counts)} client")
         else:
-            _alltime_counts = {}
+            _alltime_counts.clear()
     except Exception as e:
         logger.error(f"[AllTime] Load error: {e}")
-        _alltime_counts = {}
+        _alltime_counts.clear()
 
 
 def _save_leaderboard():
