@@ -418,6 +418,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Link ──
     if data == "link":
+        if user and user.get("is_linked") and user.get("username"):
+            await query.answer(
+                f"⚠️ আপনি ইতিমধ্যে {user['username']} দিয়ে লিঙ্ক করা আছেন!",
+                show_alert=True,
+            )
+            return
         context.user_data["waiting_for_username"] = True
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         await query.edit_message_text(
