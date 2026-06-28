@@ -677,7 +677,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ),
                 parse_mode="Markdown",
             )
-            await query.answer("✅ Request পাঠানো হয়েছে!", show_alert=True)
+            await query.edit_message_text(
+                f"✅ *Request পাঠানো হয়েছে!*\n\n"
+                f"📦 Range: *{range_name}*\n\n"
+                f"এডমিন নতুন নম্বর যোগ করলে আবার চেষ্টা করুন।",
+                parse_mode="Markdown",
+            )
         except Exception as e:
             print(f"[RequestRange] Admin notify failed: {e}")
             await query.answer("⚠️ Request পাঠাতে সমস্যা হয়েছে।", show_alert=True)
