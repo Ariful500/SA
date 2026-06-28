@@ -307,6 +307,7 @@ async def _startup_reset_check(app: Application):
     logger.info(f"🔄 Startup reset চলছে...")
     count = await reset_all_limits()
     _reset_seen_sms()
+    logger.info("🔄 Seen SMS reset হয়েছে।")
     current_limit = await get_daily_limit()
     try:
         with open(RESET_FLAG_FILE, "w") as f:
