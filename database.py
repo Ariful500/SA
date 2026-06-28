@@ -12,33 +12,37 @@ DB_FILE = "users.json"
 SETTINGS_FILE = "settings.json"
 
 import threading
-_db_lock = threading.Lock()
-_settings_lock = threading.Lock()
+_db_lock = threading.RLock()
+_settings_lock = threading.RLock()
+_git_lock = threading.Lock()
 
 
 # ══════════════════════════════════════════════
 #  GIT SAVE (real-time commit + push)
 # ══════════════════════════════════════════════
 
-def _git_save(message: str = "💾 Auto-save: users data updated"):
-    """প্রতিটা পরিবর্তনের পর git commit + push করে"""
-    try:
-        subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
-        subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
-        subprocess.run(["git", "pull", "origin", "main", "--rebase"], check=False)
-        subprocess.run(["git", "add", DB_FILE], check=False)
-        result = subprocess.run(
-            ["git", "diff", "--staged", "--quiet"],
-            capture_output=True
-        )
-        if result.returncode != 0:  # পরিবর্তন আছে
-            subprocess.run(["git", "commit", "-m", message], check=False)
-            subprocess.run(["git", "push", "origin", "main"], check=False)
-            print(f"[DB] ✅ Git saved: {message}")
-        else:
-            print("[DB] No changes to save.")
-    except Exception as e:
-        print(f"[DB] Git save error: {e}")
+def _git_commit_push(filepath: str, message: str):
+    """Git push আলাদা lock দিয়ে সিরিয়ালাইজড — DB lock এর বাইরে চলে,
+    তাই কারো ধীর push অন্য কারো read/write ব্লক করে না, আর দুইটা
+    push একসাথে চললে .git/index.lock কনফ্লিক্টও হবে না।"""
+    with _git_lock:
+        try:
+            subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
+            subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
+            subprocess.run(["git", "pull", "origin", "main", "--rebase"], check=False)
+            subprocess.run(["git", "add", filepath], check=False)
+            result = subprocess.run(
+                ["git", "diff", "--staged", "--quiet"],
+                capture_output=True
+            )
+            if result.returncode != 0:
+                subprocess.run(["git", "commit", "-m", message], check=False)
+                subprocess.run(["git", "push", "origin", "main"], check=False)
+                print(f"[Git] ✅ Saved: {message}")
+            else:
+                print("[Git] No changes to save.")
+        except Exception as e:
+            print(f"[Git] Save error: {e}")
 
 
 # ══════════════════════════════════════════════
@@ -46,50 +50,44 @@ def _git_save(message: str = "💾 Auto-save: users data updated"):
 # ══════════════════════════════════════════════
 
 def _load() -> dict:
-    if not os.path.exists(DB_FILE):
-        return {}
-    try:
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    with _db_lock:
+        if not os.path.exists(DB_FILE):
+            return {}
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
 
 
 def _save(data: dict, git_message: str = "💾 Auto-save: users data updated"):
     with _db_lock:
-        with open(DB_FILE, "w", encoding="utf-8") as f:
+        tmp_file = f"{DB_FILE}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-    _git_save(git_message)
+        os.replace(tmp_file, DB_FILE)
+    # ✅ lock ছাড়ার পরে push হচ্ছে — অন্য ইউজারের read/write আটকাবে না
+    _git_commit_push(DB_FILE, git_message)
 
 
 def _load_settings() -> dict:
-    if not os.path.exists(SETTINGS_FILE):
-        return {}
-    try:
-        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    with _settings_lock:
+        if not os.path.exists(SETTINGS_FILE):
+            return {}
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
 
 
 def _save_settings(settings: dict, git_message: str = "⚙️ Settings updated"):
     with _settings_lock:
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        tmp_file = f"{SETTINGS_FILE}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)
-    try:
-        subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
-        subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
-        subprocess.run(["git", "pull", "origin", "main", "--rebase"], check=False)
-        subprocess.run(["git", "add", SETTINGS_FILE], check=False)
-        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
-        if result.returncode != 0:
-            subprocess.run(["git", "commit", "-m", git_message], check=False)
-            subprocess.run(["git", "push", "origin", "main"], check=False)
-            print(f"[Settings] ✅ Git saved: {git_message}")
-        else:
-            print("[Settings] No changes to save.")
-    except Exception as e:
-        print(f"[Settings] Git save error: {e}")
+        os.replace(tmp_file, SETTINGS_FILE)
+    _git_commit_push(SETTINGS_FILE, git_message)
 
 
 # ══════════════════════════════════════════════
@@ -125,32 +123,27 @@ async def get_max_per_order() -> int:
     settings = await asyncio.to_thread(_load_settings)
     return settings.get("max_per_order", _DEFAULT_MAX_PER_ORDER)
 
-
 async def set_daily_limit(new_limit: int) -> int:
-    """
-    নতুন Daily Limit সেট করে এবং সবার (পুরনো ইউজার সহ) বর্তমান
-    daily_limit এখনই নতুন ভ্যালুতে আপডেট করে দেয়। কতজন ইউজার
-    আপডেট হলো তা রিটার্ন করে।
-    """
     def _do():
-        settings = _load_settings()
-        settings["daily_limit"] = new_limit
-        _save_settings(settings, f"⚙️ Daily limit changed to {new_limit}")
+        with _settings_lock, _db_lock:
+            settings = _load_settings()
+            settings["daily_limit"] = new_limit
+            _save_settings(settings, f"⚙️ Daily limit changed to {new_limit}")
 
-        data = _load()
-        for uid in data:
-            data[uid]["daily_limit"] = new_limit
-        _save(data, f"⚙️ Daily limit applied to all users: {new_limit}")
-        return len(data)
+            data = _load()
+            for uid in data:
+                data[uid]["daily_limit"] = new_limit
+            _save(data, f"⚙️ Daily limit applied to all users: {new_limit}")
+            return len(data)
     return await asyncio.to_thread(_do)
 
 
 async def set_max_per_order(new_max: int):
-    """নতুন Max Per Order সেট করে। পরের অর্ডার থেকেই কার্যকর হবে।"""
     def _do():
-        settings = _load_settings()
-        settings["max_per_order"] = new_max
-        _save_settings(settings, f"⚙️ Max per order changed to {new_max}")
+        with _settings_lock:
+            settings = _load_settings()
+            settings["max_per_order"] = new_max
+            _save_settings(settings, f"⚙️ Max per order changed to {new_max}")
     await asyncio.to_thread(_do)
 
 
@@ -167,11 +160,11 @@ async def get_auto_approve() -> bool:
 
 async def set_auto_approve(enabled: bool):
     def _do():
-        settings = _load_settings()
-        settings["auto_approve"] = enabled
-        _save_settings(settings, f"⚙️ Auto-approve set to {enabled}")
+        with _settings_lock:
+            settings = _load_settings()
+            settings["auto_approve"] = enabled
+            _save_settings(settings, f"⚙️ Auto-approve set to {enabled}")
     await asyncio.to_thread(_do)
-
 
 # ══════════════════════════════════════════════
 #  GET USER
@@ -230,29 +223,28 @@ async def register_start_user(user_id: int, telegram_username: str):
     current_limit = await get_daily_limit()
 
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            # ইতিমধ্যে আছে — শুধু telegram_username সাম্প্রতিক রাখা (বদলে থাকতে পারে)
-            data[uid]["telegram_username"] = telegram_username
-            _save(data, f"👋 User re-started bot: {telegram_username}")
-        else:
-            data[uid] = {
-                "user_id": user_id,
-                "username": None,
-                "telegram_username": telegram_username,
-                "client_id": None,
-                "is_linked": False,
-                "daily_used": 0,
-                "daily_limit": current_limit,
-                "total_allocated": 0,
-                "is_banned": False,
-                "pending_reset_request": False,
-                "created_at": datetime.now().isoformat(),
-            }
-            _save(data, f"👋 New user started bot: {telegram_username}")
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["telegram_username"] = telegram_username
+                _save(data, f"👋 User re-started bot: {telegram_username}")
+            else:
+                data[uid] = {
+                    "user_id": user_id,
+                    "username": None,
+                    "telegram_username": telegram_username,
+                    "client_id": None,
+                    "is_linked": False,
+                    "daily_used": 0,
+                    "daily_limit": current_limit,
+                    "total_allocated": 0,
+                    "is_banned": False,
+                    "pending_reset_request": False,
+                    "created_at": datetime.now().isoformat(),
+                }
+                _save(data, f"👋 New user started bot: {telegram_username}")
     await asyncio.to_thread(_do)
-
 
 # ══════════════════════════════════════════════
 #  ADD USER (LINK)
@@ -262,33 +254,80 @@ async def register_start_user(user_id: int, telegram_username: str):
 # ══════════════════════════════════════════════
 
 async def add_user(user_id: int, telegram_username: str, lamix_username: str, client_id: str):
+async def add_user(user_id: int, telegram_username: str, lamix_username: str, client_id: str):
+    """⚠️ পুরনো ফাংশন — নতুন কোডে try_link_user() ব্যবহার করুন (race-free)।"""
     current_limit = await get_daily_limit()
 
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            # আগের রেকর্ড আছে (স্টার্ট করার কারণে) — limit/usage/total ছোয়া হচ্ছে না
-            data[uid]["username"] = lamix_username
-            data[uid]["telegram_username"] = telegram_username
-            data[uid]["client_id"] = client_id
-            data[uid]["is_linked"] = True
-        else:
-            data[uid] = {
-                "user_id": user_id,
-                "username": lamix_username,
-                "telegram_username": telegram_username,
-                "client_id": client_id,
-                "is_linked": True,
-                "daily_used": 0,
-                "daily_limit": current_limit,
-                "total_allocated": 0,
-                "is_banned": False,
-                "pending_reset_request": False,
-                "created_at": datetime.now().isoformat(),
-            }
-        _save(data, f"👤 User linked: {lamix_username}")
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["username"] = lamix_username
+                data[uid]["telegram_username"] = telegram_username
+                data[uid]["client_id"] = client_id
+                data[uid]["is_linked"] = True
+            else:
+                data[uid] = {
+                    "user_id": user_id,
+                    "username": lamix_username,
+                    "telegram_username": telegram_username,
+                    "client_id": client_id,
+                    "is_linked": True,
+                    "daily_used": 0,
+                    "daily_limit": current_limit,
+                    "total_allocated": 0,
+                    "is_banned": False,
+                    "pending_reset_request": False,
+                    "created_at": datetime.now().isoformat(),
+                }
+            _save(data, f"👤 User linked: {lamix_username}")
     await asyncio.to_thread(_do)
+
+
+# ══════════════════════════════════════════════
+#  ATOMIC LINK — username-taken চেক + link একসাথে এক lock এ
+#  (দুজন একসাথে একই Lamix username link করার race বন্ধ করে)
+# ══════════════════════════════════════════════
+
+async def try_link_user(user_id: int, telegram_username: str, lamix_username: str, client_id: str) -> bool:
+    current_limit = await get_daily_limit()
+
+    def _do():
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+
+            for other_uid, other_user in data.items():
+                if other_uid == uid:
+                    continue
+                existing = other_user.get("username")
+                if existing and existing.lower() == lamix_username.lower():
+                    return False  # ❌ অন্য কেউ ইতিমধ্যে নিয়ে নিয়েছে
+
+            if uid in data:
+                data[uid]["username"] = lamix_username
+                data[uid]["telegram_username"] = telegram_username
+                data[uid]["client_id"] = client_id
+                data[uid]["is_linked"] = True
+            else:
+                data[uid] = {
+                    "user_id": user_id,
+                    "username": lamix_username,
+                    "telegram_username": telegram_username,
+                    "client_id": client_id,
+                    "is_linked": True,
+                    "daily_used": 0,
+                    "daily_limit": current_limit,
+                    "total_allocated": 0,
+                    "is_banned": False,
+                    "pending_reset_request": False,
+                    "created_at": datetime.now().isoformat(),
+                }
+            _save(data, f"👤 User linked: {lamix_username}")
+            return True
+
+    return await asyncio.to_thread(_do)
 
 
 # ══════════════════════════════════════════════
@@ -300,15 +339,15 @@ async def add_user(user_id: int, telegram_username: str, lamix_username: str, cl
 
 async def unlink_user(user_id: int):
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            data[uid]["username"] = None
-            data[uid]["client_id"] = None
-            data[uid]["is_linked"] = False
-            _save(data, "❌ User unlinked (limit/usage preserved)")
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["username"] = None
+                data[uid]["client_id"] = None
+                data[uid]["is_linked"] = False
+                _save(data, "❌ User unlinked (limit/usage preserved)")
     await asyncio.to_thread(_do)
-
 
 # ══════════════════════════════════════════════
 #  UPDATE USAGE
@@ -316,14 +355,14 @@ async def unlink_user(user_id: int):
 
 async def update_usage(user_id: int, quantity: int):
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            data[uid]["daily_used"] += quantity
-            data[uid]["total_allocated"] += quantity
-            _save(data, f"📊 Usage updated: {quantity} numbers allocated")
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["daily_used"] += quantity
+                data[uid]["total_allocated"] += quantity
+                _save(data, f"📊 Usage updated: {quantity} numbers allocated")
     await asyncio.to_thread(_do)
-
 
 # ══════════════════════════════════════════════
 #  RESET ALL LIMITS
@@ -333,14 +372,14 @@ async def reset_all_limits() -> int:
     current_limit = await get_daily_limit()
 
     def _do():
-        data = _load()
-        for uid in data:
-            data[uid]["daily_used"] = 0
-            data[uid]["daily_limit"] = current_limit
-        _save(data, "🔄 All limits reset")
-        return len(data)
+        with _db_lock:
+            data = _load()
+            for uid in data:
+                data[uid]["daily_used"] = 0
+                data[uid]["daily_limit"] = current_limit
+            _save(data, "🔄 All limits reset")
+            return len(data)
     return await asyncio.to_thread(_do)
-
 
 # ══════════════════════════════════════════════
 #  RESET USER LIMIT
@@ -350,12 +389,13 @@ async def reset_user_limit(user_id: int):
     current_limit = await get_daily_limit()
 
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            data[uid]["daily_used"] = 0
-            data[uid]["daily_limit"] = current_limit
-            _save(data, f"🔄 User limit reset: {uid}")
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["daily_used"] = 0
+                data[uid]["daily_limit"] = current_limit
+                _save(data, f"🔄 User limit reset: {uid}")
     await asyncio.to_thread(_do)
 
 
@@ -369,15 +409,15 @@ async def reset_user_limit(user_id: int):
 
 async def reset_user_usage(user_id: int) -> int | None:
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            data[uid]["daily_used"] = 0
-            _save(data, f"🔄 User usage reset (limit unchanged): {uid}")
-            return data[uid]["daily_limit"]
-        return None
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["daily_used"] = 0
+                _save(data, f"🔄 User usage reset (limit unchanged): {uid}")
+                return data[uid]["daily_limit"]
+            return None
     return await asyncio.to_thread(_do)
-
 
 # ══════════════════════════════════════════════
 #  PENDING RESET REQUEST FLAG
@@ -394,13 +434,13 @@ async def has_pending_reset_request(user_id: int) -> bool:
 
 async def set_pending_reset_request(user_id: int, pending: bool):
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            data[uid]["pending_reset_request"] = pending
-            _save(data, f"🔔 Pending reset request flag set to {pending} for {uid}")
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["pending_reset_request"] = pending
+                _save(data, f"🔔 Pending reset request flag set to {pending} for {uid}")
     await asyncio.to_thread(_do)
-
 
 # ══════════════════════════════════════════════
 #  ADD USER LIMIT
@@ -408,13 +448,13 @@ async def set_pending_reset_request(user_id: int, pending: bool):
 
 async def add_user_limit(user_id: int, amount: int):
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            data[uid]["daily_limit"] += amount
-            _save(data, f"➕ Limit added: {amount} for {uid}")
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["daily_limit"] += amount
+                _save(data, f"➕ Limit added: {amount} for {uid}")
     await asyncio.to_thread(_do)
-
 
 # ══════════════════════════════════════════════
 #  BAN / UNBAN
@@ -422,23 +462,24 @@ async def add_user_limit(user_id: int, amount: int):
 
 async def ban_user(user_id: int):
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            data[uid]["is_banned"] = True
-            _save(data, f"🚫 User banned: {uid}")
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["is_banned"] = True
+                _save(data, f"🚫 User banned: {uid}")
     await asyncio.to_thread(_do)
 
 
 async def unban_user(user_id: int):
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            data[uid]["is_banned"] = False
-            _save(data, f"✅ User unbanned: {uid}")
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["is_banned"] = False
+                _save(data, f"✅ User unbanned: {uid}")
     await asyncio.to_thread(_do)
-
 
 # ══════════════════════════════════════════════
 #  RESET MEMBER (lamix-link মুছে দেয়, /unlink এর মতোই)
@@ -448,18 +489,19 @@ async def unban_user(user_id: int):
 # ══════════════════════════════════════════════
 
 async def reset_member(user_id: int) -> dict | None:
-    """ইউজারের lamix-link (username, client_id) মুছে দেয়। limit/usage/total অক্ষত থাকে।"""
+async def reset_member(user_id: int) -> dict | None:
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            snapshot = dict(data[uid])  # রিটার্নের জন্য পুরনো অবস্থার কপি (telegram_username দেখানোর জন্য)
-            data[uid]["username"] = None
-            data[uid]["client_id"] = None
-            data[uid]["is_linked"] = False
-            _save(data, f"♻️ User lamix-link reset (limit/usage preserved): {uid}")
-            return snapshot
-        return None
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                snapshot = dict(data[uid])
+                data[uid]["username"] = None
+                data[uid]["client_id"] = None
+                data[uid]["is_linked"] = False
+                _save(data, f"♻️ User lamix-link reset (limit/usage preserved): {uid}")
+                return snapshot
+            return None
     return await asyncio.to_thread(_do)
 
 
@@ -499,12 +541,13 @@ async def sync_total_allocated(user_id: int, lamix_username: str) -> int:
     active_count = await lamix.fetch_active_count_async(lamix_username)
 
     def _do():
-        data = _load()
-        uid = str(user_id)
-        if uid in data:
-            data[uid]["total_allocated"] = active_count
-            _save(data, f"🔄 Total allocated synced: {lamix_username} = {active_count}")
-        return active_count
+        with _db_lock:
+            data = _load()
+            uid = str(user_id)
+            if uid in data:
+                data[uid]["total_allocated"] = active_count
+                _save(data, f"🔄 Total allocated synced: {lamix_username} = {active_count}")
+            return active_count
 
     return await asyncio.to_thread(_do)
 
