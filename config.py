@@ -19,6 +19,3 @@ GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
 DAILY_LIMIT       = 120
 LIMIT_RESET_HOUR  = 6
 MAX_PER_ORDER     = 30
-
-# Database
-DATABASE_NAME = "sa_sms_work.db"
