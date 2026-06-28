@@ -254,7 +254,6 @@ async def register_start_user(user_id: int, telegram_username: str):
 # ══════════════════════════════════════════════
 
 async def add_user(user_id: int, telegram_username: str, lamix_username: str, client_id: str):
-async def add_user(user_id: int, telegram_username: str, lamix_username: str, client_id: str):
     """⚠️ পুরনো ফাংশন — নতুন কোডে try_link_user() ব্যবহার করুন (race-free)।"""
     current_limit = await get_daily_limit()
 
