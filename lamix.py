@@ -458,7 +458,6 @@ def update_client_payment(lamix_username: str, payment_type: str, value: str) ->
             "active": "1",
         }
         resp = s.post(
-        resp = s.post(
             f"{LAMIX_URL}/ints/agent/res/editclient.php",
             data=data,
             headers={
