@@ -458,16 +458,21 @@ def update_client_payment(lamix_username: str, payment_type: str, value: str) ->
             "active": "1",
         }
         resp = s.post(
+        resp = s.post(
             f"{LAMIX_URL}/ints/agent/res/editclient.php",
             data=data,
             headers={
                 "Referer": f"{LAMIX_URL}/ints/agent/Clients",
                 "Origin": LAMIX_URL,
-                "X-Requested-With": "XMLHttpRequest",
+                "X-Requested-With": None,
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             },
             timeout=15,
         )
-        print(f"[PaymentUpdate] {lamix_username} -> {payment_type}: {resp.status_code}")
+        print(f"[PaymentUpdate] {lamix_username} -> {payment_type}")
+        print(f"[PaymentUpdate] Sent data: {data}")
+        print(f"[PaymentUpdate] Status: {resp.status_code}")
+        print(f"[PaymentUpdate] Response (first 500 chars): {resp.text[:500]}")
         return resp.status_code == 200
 
     except Exception as e:
