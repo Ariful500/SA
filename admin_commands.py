@@ -69,9 +69,20 @@ async def addlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # নতুন
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import datetime
-    from bot import get_leaderboard_counts, get_alltime_counts
-    _leaderboard_counts = get_leaderboard_counts()
-    _alltime_counts = get_alltime_counts()
+    import json
+
+    # সরাসরি JSON থেকে পড়া
+    try:
+        with open("leaderboard_sms.json", "r") as f:
+            _leaderboard_counts = json.load(f).get("counts", {})
+    except Exception:
+        _leaderboard_counts = {}
+
+    try:
+        with open("alltime_leaderboard.json", "r") as f:
+            _alltime_counts = json.load(f).get("counts", {})
+    except Exception:
+        _alltime_counts = {}
 
     bd_time = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
     now_str = bd_time.strftime("%I:%M %p")
