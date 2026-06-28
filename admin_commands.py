@@ -147,22 +147,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         text += "আজকে এখনো কোনো SMS আসেনি।"
 
     # ── All Time ──
-async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    import datetime
-    import json
 
-    # GitHub থেকে latest JSON pull করো
-    import subprocess
-    try:
-        subprocess.run(["git", "pull", "origin", "main"], check=False, capture_output=True)
-    except Exception:
-        pass
-
-    # সরাসরি JSON থেকে পড়া
-    try:
-        with open("leaderboard_sms.json", "r") as f:
-            _leaderboard_counts = {
-                k: v for k, v in json.load(f).get("counts", {}).items()
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import datetime
     import json
