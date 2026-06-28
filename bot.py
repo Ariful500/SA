@@ -51,6 +51,12 @@ _shutdown_mode = False
 def is_shutdown_mode() -> bool:
     return _shutdown_mode
 
+def get_leaderboard_counts():
+    return _leaderboard_counts
+
+def get_alltime_counts():
+    return _alltime_counts
+
 
 # ══════════════════════════════════════════════
 #  SMS MONITOR
