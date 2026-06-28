@@ -119,7 +119,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = await get_user(user_id)
-    if user:
+    if user and user.get("is_linked") and user.get("username"):
         await update.message.reply_text(
             f"⚠️ ইতিমধ্যে লিঙ্ক করা আছেন!\nঅ্যাকাউন্ট: *{user['username']}*\n\nআনলিঙ্ক করতে /unlink দিন।",
             parse_mode="Markdown",
