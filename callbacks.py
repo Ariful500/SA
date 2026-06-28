@@ -426,6 +426,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown",
             )
             return
+        context.user_data["waiting_for_username"] = True
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
+        await query.edit_message_text(
+            "👤 *Lamix username পাঠান:*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
 
     # ── Unlink ──
     if data == "unlink":
