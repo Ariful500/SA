@@ -289,9 +289,47 @@ _GROUP_CMDS = [
 ]
 
 
+async def _startup_reset_check(app: Application):
+    import datetime, json
+    RESET_FLAG_FILE = "last_reset.json"
+    now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+    today_str = now_bd.strftime("%Y-%m-%d")
+    last_reset = ""
+    try:
+        if os.path.exists(RESET_FLAG_FILE):
+            with open(RESET_FLAG_FILE, "r") as f:
+                last_reset = json.load(f).get("date", "")
+    except Exception:
+        pass
+    if last_reset == today_str:
+        logger.info(f"✅ আজকে reset আগেই হয়েছে, skip।")
+        return
+    logger.info(f"🔄 Startup reset চলছে...")
+    count = await reset_all_limits()
+    _reset_seen_sms()
+    current_limit = await get_daily_limit()
+    try:
+        with open(RESET_FLAG_FILE, "w") as f:
+            json.dump({"date": today_str}, f)
+        subprocess.run(["git", "add", RESET_FLAG_FILE], check=False)
+        subprocess.run(["git", "commit", "-m", f"🔄 Reset flag: {today_str}"], check=False)
+        subprocess.run(["git", "push", "origin", "main"], check=False)
+    except Exception as e:
+        logger.warning(f"Reset flag save error: {e}")
+    try:
+        await app.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"🔄 *Startup Reset সম্পন্ন!*\n\n✅ {count} জন ইউজারের লিমিট {current_limit} হয়েছে।",
+            parse_mode="Markdown",
+        )
+    except Exception:
+        pass
+
+
 async def post_init(app: Application):
     await init_db()
     _load_seen_sms()
+    await _startup_reset_check(app)
     await app.bot.set_my_commands(_USER_CMDS)
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
     await app.bot.set_my_commands(_GROUP_CMDS, scope=BotCommandScopeAllGroupChats())
