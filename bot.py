@@ -112,11 +112,12 @@ def _save_leaderboard():
         today_str = now_bd.strftime("%Y-%m-%d")
         with open(LEADERBOARD_FILE, "w") as f:
             json.dump({"date": today_str, "counts": _leaderboard_counts}, f)
-        subprocess.run(["git", "add", LEADERBOARD_FILE], check=False)
-        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
-        if result.returncode != 0:
-            subprocess.run(["git", "commit", "-m", "📊 Leaderboard updated"], check=False)
-            subprocess.run(["git", "push", "origin", "main"], check=False)
+        # git background এ
+        threading.Thread(target=lambda: [
+            subprocess.run(["git", "add", LEADERBOARD_FILE], check=False),
+            subprocess.run(["git", "commit", "-m", "📊 Leaderboard updated"], check=False),
+            subprocess.run(["git", "push", "origin", "main"], check=False),
+        ], daemon=True).start()
     except Exception as e:
         logger.error(f"[Leaderboard] Save error: {e}")
 
@@ -125,11 +126,12 @@ def _save_alltime_leaderboard():
     try:
         with open(ALLTIME_LEADERBOARD_FILE, "w") as f:
             json.dump({"counts": _alltime_counts}, f)
-        subprocess.run(["git", "add", ALLTIME_LEADERBOARD_FILE], check=False)
-        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
-        if result.returncode != 0:
-            subprocess.run(["git", "commit", "-m", "🌟 All Time Leaderboard updated"], check=False)
-            subprocess.run(["git", "push", "origin", "main"], check=False)
+        # git background এ
+        threading.Thread(target=lambda: [
+            subprocess.run(["git", "add", ALLTIME_LEADERBOARD_FILE], check=False),
+            subprocess.run(["git", "commit", "-m", "🌟 All Time Leaderboard updated"], check=False),
+            subprocess.run(["git", "push", "origin", "main"], check=False),
+        ], daemon=True).start()
     except Exception as e:
         logger.error(f"[AllTime] Save error: {e}")
 
