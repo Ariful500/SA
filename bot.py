@@ -244,6 +244,8 @@ async def sms_monitor_loop(app: Application):
             if new_rows:
                 number_limits = await lamix.fetch_number_limits_async()
 
+            send_count = 0  # ✅ গ্রুপে পাঠানো message এর counter
+
             for i, row in enumerate(new_rows):
                 try:
                     date_str = str(row[0])
@@ -263,7 +265,6 @@ async def sms_monitor_loop(app: Application):
                     client_uname = info.get("client")
 
                     if max_limit is not None and today_count > max_limit:
-                        # ── লিমিট ক্রস হয়ে গেছে ──
                         msg = (
                             f"⚠️ Limit Exceeded!\n"
                             f"━━━━━━━━━━━━━━━\n"
@@ -277,6 +278,7 @@ async def sms_monitor_loop(app: Application):
                             f"🕐 {time_str}"
                         )
                         await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg)
+                        send_count += 1
 
                         if client_uname:
                             target_user = await get_user_by_lamix_username(client_uname)
@@ -309,13 +311,15 @@ async def sms_monitor_loop(app: Application):
                             f"🕐 {time_str}"
                         )
                         await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg)
+                        send_count += 1
 
-                    if (i + 1) % 25 == 0:
+                    # ✅ গ্রুপে পাঠানো প্রতি ২০টার পর ১ সেকেন্ড বিরতি
+                    # DM গুলো count এ ধরা হয়নি — শুধু group message count
+                    if send_count % 20 == 0:
                         await asyncio.sleep(1)
 
                 except Exception as e:
                     logger.error(f"[SMS Monitor] Send error: {e}")
-
             if new_rows:
                 _save_seen_sms()
                 _save_leaderboard()
