@@ -68,29 +68,42 @@ async def addlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # নতুন
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    import lamix
     import datetime
-
-    counts = await lamix.fetch_sms_counts_today_async()
-
-    if not counts:
-        await update.message.reply_text("📊 আজকে এখনো কোনো SMS আসেনি।")
-        return
-
-    sorted_counts = sorted(counts.items(), key=lambda x: x[1], reverse=True)
-    total = sum(c for _, c in sorted_counts)
-
-    medals = ["🥇", "🥈", "🥉"]
-    text = "🏆 SMS Leaderboard\n\n"
-
-    for i, (client, count) in enumerate(sorted_counts[:20]):
-        masked = (client[:-3] + "***") if len(client) > 3 else "***"
-        prefix = medals[i] if i < 3 else f"{i+1}."
-        text += f"{prefix} {masked} — *{count}*\n"
+    from bot import _leaderboard_counts, _alltime_counts
 
     bd_time = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
     now_str = bd_time.strftime("%I:%M %p")
-    text += f"\n📊 Total SMS: *{total:,}*\n⏰ Updated: {now_str}"
+    date_str = bd_time.strftime("%d %B %Y")
+
+    # ── Today ──
+    text = "🏆 *Today SMS Leaderboard*\n\n"
+    if _leaderboard_counts:
+        sorted_today = sorted(_leaderboard_counts.items(), key=lambda x: x[1], reverse=True)
+        total_today = sum(c for _, c in sorted_today)
+        medals = ["🥇", "🥈", "🥉"]
+        for i, (client, count) in enumerate(sorted_today[:20]):
+            masked = (client[:-3] + "***") if len(client) > 3 else "***"
+            prefix = medals[i] if i < 3 else f"{i+1}."
+            text += f"{prefix} {masked} — *{count}*\n"
+        text += f"\n📊 Total: *{total_today:,} SMS*\n"
+        text += f"⏰ {now_str} | {date_str}"
+    else:
+        text += "আজকে এখনো কোনো SMS আসেনি।"
+
+    # ── All Time ──
+    text += "\n\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n\n"
+    text += "🌟 *All Time Leaderboard*\n\n"
+    if _alltime_counts:
+        sorted_alltime = sorted(_alltime_counts.items(), key=lambda x: x[1], reverse=True)
+        total_alltime = sum(c for _, c in sorted_alltime)
+        medals = ["🥇", "🥈", "🥉"]
+        for i, (client, count) in enumerate(sorted_alltime[:20]):
+            masked = (client[:-3] + "***") if len(client) > 3 else "***"
+            prefix = medals[i] if i < 3 else f"{i+1}."
+            text += f"{prefix} {masked} — *{count:,}*\n"
+        text += f"\n📊 Total: *{total_alltime:,} SMS*"
+    else:
+        text += "এখনো কোনো data নেই।"
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
