@@ -245,6 +245,7 @@ async def sms_monitor_loop(app: Application):
     global _seen_sms
 
     logger.info("📡 SMS Monitor চালু হয়েছে...")
+    _notified_empty_ranges: set[str] = set()  # ✅ একবারই notify করবে
 
     while True:
         try:
