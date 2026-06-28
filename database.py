@@ -488,7 +488,6 @@ async def unban_user(user_id: int):
 # ══════════════════════════════════════════════
 
 async def reset_member(user_id: int) -> dict | None:
-async def reset_member(user_id: int) -> dict | None:
     def _do():
         with _db_lock:
             data = _load()
