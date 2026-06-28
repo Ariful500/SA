@@ -8,13 +8,14 @@ v5 fix:
 import re
 import asyncio
 import time
-import asyncio
+import threading
 import requests
 from bs4 import BeautifulSoup
 
 from config import LAMIX_URL, LAMIX_USERNAME, LAMIX_PASSWORD
 
 _session: requests.Session | None = None
+_session_lock = threading.Lock()
 
 
 # ══════════════════════════════════════════════
@@ -71,13 +72,20 @@ def _do_login() -> requests.Session | None:
 
 def _get_session() -> requests.Session | None:
     global _session
-    return _session if _session else _do_login()
+    if _session:
+        return _session
+    with _session_lock:
+        # ✅ lock এর ভেতরে আবার চেক — অন্য থ্রেড এর মধ্যেই লগইন করে থাকতে পারে
+        if _session:
+            return _session
+        return _do_login()
 
 
 def _reset_session() -> requests.Session | None:
     global _session
-    _session = None
-    return _do_login()
+    with _session_lock:
+        _session = None
+        return _do_login()
 
 
 # ══════════════════════════════════════════════
