@@ -147,6 +147,29 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ── Payment value input ──
+    if context.user_data.get("waiting_for_payment_value"):
+        method = context.user_data.pop("waiting_for_payment_value")
+        value = text.strip()
+
+        user = await get_user(user_id)
+        if not user or not user.get("username"):
+            await update.message.reply_text("⚠️ আগে /link দিয়ে অ্যাকাউন্ট লিঙ্ক করুন।")
+            return
+
+        await update.message.reply_text("⏳ আপডেট করা হচ্ছে...")
+        success = await lamix.update_client_payment_async(user["username"], method, value)
+
+        if success:
+            label = {"binance": "Binance UID", "bkash": "Bkash নাম্বার", "nagad": "Nagad নাম্বার"}[method]
+            await update.message.reply_text(
+                f"✅ *{label} সফলভাবে সেভ হয়েছে!*\n\n📝 ভ্যালু: `{value}`",
+                parse_mode="Markdown",
+            )
+        else:
+            await update.message.reply_text("❌ আপডেট করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।")
+        return
+
     # ── Username input ──
     if context.user_data.get("waiting_for_username"):
         context.user_data.clear()
@@ -385,6 +408,40 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "confirm_unlink":
         await unlink_user(user_id)
         await query.edit_message_text("✅ অ্যাকাউন্ট আনলিঙ্ক হয়েছে।")
+        return
+
+    # ── Payment Menu ──
+    if data == "payment_menu":
+        if not user or not user.get("username"):
+            await query.answer("⚠️ আগে /link দিয়ে অ্যাকাউন্ট লিঙ্ক করুন।", show_alert=True)
+            return
+        keyboard = [
+            [InlineKeyboardButton("🟡 Binance", callback_data="pay_binance")],
+            [InlineKeyboardButton("📱 Bkash", callback_data="pay_bkash")],
+            [InlineKeyboardButton("📱 Nagad", callback_data="pay_nagad")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
+        ]
+        await query.edit_message_text(
+            "💳 *Payment Method সিলেক্ট করুন:*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
+    # ── Payment Method Selected ──
+    if data in ("pay_binance", "pay_bkash", "pay_nagad"):
+        method = data[len("pay_"):]  # binance / bkash / nagad
+        context.user_data["waiting_for_payment_value"] = method
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
+        if method == "binance":
+            prompt = "🟡 *Binance UID পাঠান:*"
+        elif method == "bkash":
+            prompt = "📱 *Bkash নাম্বার পাঠান:*"
+        else:
+            prompt = "📱 *Nagad নাম্বার পাঠান:*"
+        await query.edit_message_text(
+            prompt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         return
 
     # ── Confirm Reset (Admin) ──
