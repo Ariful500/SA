@@ -314,34 +314,7 @@ async def sms_monitor_loop(app: Application):
                 _save_leaderboard()
                 _save_alltime_leaderboard()
 
-            # ✅ Available 0 হলে admin notify — প্রতি ৫ মিনিটে একবার check
-            _range_check_counter += 1
-            if _range_check_counter >= 60:  # ৫ সেকেন্ড × ৬০ = ৫ মিনিট
-                _range_check_counter = 0
-                try:
-                    now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
-                    if 6 <= now_bd.hour < 24:
-                        ranges = await lamix.fetch_ranges_async()
-                        for r in ranges:
-                            name = r["name"]
-                            if r["available"] == 0 and name not in _notified_empty_ranges:
-                                _notified_empty_ranges.add(name)
-                                await app.bot.send_message(
-                                    chat_id=ADMIN_ID,
-                                    text=(
-                                        f"⚠️ *Range এ নম্বর শেষ!*\n\n"
-                                        f"📦 Range: *{name}*\n"
-                                        f"📊 Total: {r['total']} | Available: *0*\n\n"
-                                        f"নতুন নম্বর যোগ করুন।"
-                                    ),
-                                    parse_mode="Markdown",
-                                )
-                            elif r["available"] > 0 and name in _notified_empty_ranges:
-                                _notified_empty_ranges.discard(name)
-                except Exception as e:
-                    logger.error(f"[RangeCheck] Error: {e}")
-
-        except Exception as e:
+            except Exception as e:
             logger.error(f"[SMS Monitor] Loop error: {e}")
 
         await asyncio.sleep(5)
@@ -446,6 +419,22 @@ async def _startup_reset_check(app: Application):
         )
     except Exception:
         pass
+
+    # ✅ নতুন দিন শুরুতে একবার empty range চেক করো
+    try:
+        ranges = await lamix.fetch_ranges_async()
+        empty_ranges = [r for r in ranges if r["available"] == 0]
+        for r in empty_ranges:
+            _notified_empty_ranges.add(r["name"])
+        if empty_ranges:
+            lines = "\n".join(f"📦 *{r['name']}* (Total: {r['total']})" for r in empty_ranges)
+            await app.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"⚠️ *আজকের Empty Ranges:*\n\n{lines}\n\nনতুন নম্বর যোগ করুন।",
+                parse_mode="Markdown",
+            )
+    except Exception as e:
+        logger.error(f"[StartupRangeCheck] Error: {e}")
 
 
 async def post_init(app: Application):
