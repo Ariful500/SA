@@ -436,9 +436,12 @@ def update_client_payment(lamix_username: str, payment_type: str, value: str) ->
 
     if payment_type == "binance":
         skype_val = value
+        contact_val = ""  # Bkash/Nagad থাকলে মুছে যাবে
     elif payment_type == "bkash":
+        skype_val = ""  # Binance UID থাকলে মুছে যাবে
         contact_val = f"Bkash {value}"
     elif payment_type == "nagad":
+        skype_val = ""  # Binance UID থাকলে মুছে যাবে
         contact_val = f"Nagad {value}"
     else:
         print(f"[PaymentUpdate] Unknown payment_type: {payment_type}")
@@ -492,6 +495,26 @@ def update_client_payment(lamix_username: str, payment_type: str, value: str) ->
 
 async def get_client_full_info_async(lamix_username: str) -> dict | None:
     return await asyncio.to_thread(get_client_full_info, lamix_username)
+
+
+def parse_payment_info(info: dict) -> dict | None:
+    """
+    Client-এর skype/contact ফিল্ড থেকে বর্তমান payment method বের করে।
+    রিটার্ন: {"method": "binance"|"bkash"|"nagad", "value": "..."} অথবা None
+    """
+    if not info:
+        return None
+
+    skype = (info.get("skype") or "").strip()
+    contact = (info.get("contact") or "").strip()
+
+    if contact.lower().startswith("bkash "):
+        return {"method": "bkash", "value": contact[6:].strip()}
+    if contact.lower().startswith("nagad "):
+        return {"method": "nagad", "value": contact[6:].strip()}
+    if skype:
+        return {"method": "binance", "value": skype}
+    return None
 
 
 async def update_client_payment_async(lamix_username: str, payment_type: str, value: str) -> bool:
