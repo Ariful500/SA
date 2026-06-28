@@ -117,6 +117,16 @@ async def _show_search_results(update: Update, context: ContextTypes.DEFAULT_TYP
 # ══════════════════════════════════════════════
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ── Shutdown Mode চেক ──
+    from bot import is_shutdown_mode
+    if is_shutdown_mode():
+        await update.message.reply_text(
+            "⏳ *বট এখন রিস্টার্ট হচ্ছে!*\n\n"
+            "৩০ সেকেন্ড অপেক্ষা করুন, তারপর আবার চেষ্টা করুন।",
+            parse_mode="Markdown",
+        )
+        return
+    
     user_id = update.effective_user.id
     text = update.message.text.strip()
 
@@ -385,6 +395,16 @@ async def _auto_approve_reset(context, user_id: int):
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    
+    # ── Shutdown Mode চেক ──
+    from bot import is_shutdown_mode
+    if is_shutdown_mode():
+        await query.answer(
+            "⏳ বট রিস্টার্ট হচ্ছে! ৩০ সেকেন্ড পরে চেষ্টা করুন।",
+            show_alert=True,
+        )
+        return
+    
     await query.answer()
     data = query.data
     user_id = update.effective_user.id
