@@ -57,7 +57,7 @@ LEADERBOARD_FILE = "leaderboard_sms.json"
 ALLTIME_LEADERBOARD_FILE = "alltime_leaderboard.json"
 _leaderboard_counts: dict[str, int] = {}
 _alltime_counts: dict[str, int] = {}
-
+_notified_empty_ranges: set[str] = set()
 
 def _load_leaderboard():
     global _leaderboard_counts
@@ -242,10 +242,10 @@ def _reset_seen_sms():
 
 async def sms_monitor_loop(app: Application):
     import datetime
-    global _seen_sms
+    global _seen_sms, _notified_empty_ranges
 
     logger.info("📡 SMS Monitor চালু হয়েছে...")
-    _notified_empty_ranges: set[str] = set()  # ✅ একবারই notify করবে
+    _range_check_counter = 0
 
     while True:
         try:
@@ -362,27 +362,33 @@ async def sms_monitor_loop(app: Application):
                 _save_leaderboard()
                 _save_alltime_leaderboard()
 
-            # ✅ Available 0 হলে admin notify (একবারই)
-            try:
-                ranges = await lamix.fetch_ranges_async()
-                for r in ranges:
-                    name = r["name"]
-                    if r["available"] == 0 and name not in _notified_empty_ranges:
-                        _notified_empty_ranges.add(name)
-                        await app.bot.send_message(
-                            chat_id=ADMIN_ID,
-                            text=(
-                                f"⚠️ *Range এ নম্বর শেষ!*\n\n"
-                                f"📦 Range: *{name}*\n"
-                                f"📊 Total: {r['total']} | Available: *0*\n\n"
-                                f"নতুন নম্বর যোগ করুন।"
-                            ),
-                            parse_mode="Markdown",
-                        )
-                    elif r["available"] > 0 and name in _notified_empty_ranges:
-                        _notified_empty_ranges.discard(name)  # নতুন নম্বর আসলে reset
-            except Exception as e:
-                logger.error(f"[RangeCheck] Error: {e}")
+            # ✅ Available 0 হলে admin notify — প্রতি ৫ মিনিটে একবার check
+            _range_check_counter = _range_check_counter + 1 if "_range_check_counter" in dir() else 1
+            if _range_check_counter >= 60:  # ৫ সেকেন্ড × ৬০ = ৫ মিনিট
+                _range_check_counter = 0
+                try:
+                    import datetime
+                    now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+                    if 6 <= now_bd.hour < 24:
+                        ranges = await lamix.fetch_ranges_async()
+                        for r in ranges:
+                            name = r["name"]
+                            if r["available"] == 0 and name not in _notified_empty_ranges:
+                                _notified_empty_ranges.add(name)
+                                await app.bot.send_message(
+                                    chat_id=ADMIN_ID,
+                                    text=(
+                                        f"⚠️ *Range এ নম্বর শেষ!*\n\n"
+                                        f"📦 Range: *{name}*\n"
+                                        f"📊 Total: {r['total']} | Available: *0*\n\n"
+                                        f"নতুন নম্বর যোগ করুন।"
+                                    ),
+                                    parse_mode="Markdown",
+                                )
+                            elif r["available"] > 0 and name in _notified_empty_ranges:
+                                _notified_empty_ranges.discard(name)
+                except Exception as e:
+                    logger.error(f"[RangeCheck] Error: {e}")
 
         except Exception as e:
             logger.error(f"[SMS Monitor] Loop error: {e}")
@@ -470,7 +476,8 @@ async def _startup_reset_check(app: Application):
     count = await reset_all_limits()
     _reset_seen_sms()
     _reset_leaderboard()
-    logger.info("🔄 Seen SMS ও Leaderboard reset হয়েছে।")
+    _notified_empty_ranges.clear()
+    logger.info("🔄 Seen SMS, Leaderboard ও Range notification reset হয়েছে।")
     current_limit = await get_daily_limit()
     try:
         with open(RESET_FLAG_FILE, "w") as f:
