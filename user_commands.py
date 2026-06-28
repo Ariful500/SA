@@ -195,6 +195,16 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_nums_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ── Shutdown Mode চেক ──
+    from bot import is_shutdown_mode
+    if is_shutdown_mode():
+        await update.message.reply_text(
+            "⏳ *বট এখন রিস্টার্ট হচ্ছে!*\n\n"
+            "৩০ সেকেন্ড অপেক্ষা করুন।",
+            parse_mode="Markdown",
+        )
+        return
+    
     user_id = update.effective_user.id
     user = await get_user(user_id)
     if not user:
