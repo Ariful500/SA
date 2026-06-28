@@ -3,13 +3,17 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-# ✅ Allocation Queue Lock
+# ✅ Allocation Queue Lock — সবার allocation request সিরিয়ালাইজড করে
 _allocation_lock = asyncio.Lock()
+
+# ✅ একজন ইউজার ডাবল-ট্যাপ/দুই ডিভাইস থেকে একসাথে quantity সাবমিট করলে
+# ডুপ্লিকেট প্রসেসিং ও daily limit বাইপাস ঠেকানোর জন্য
+_users_submitting: set[int] = set()
 
 from config import ADMIN_ID
 from database import (
     get_user, unlink_user, update_usage, reset_user_usage,
-    add_user, is_username_taken, set_pending_reset_request,
+    add_user, try_link_user, is_username_taken, set_pending_reset_request,
     has_pending_reset_request, set_daily_limit, set_max_per_order,
     get_daily_limit, get_max_per_order, reset_member,
 )
@@ -175,23 +179,25 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         lamix_username = text.strip()
 
-        if await is_username_taken(lamix_username):
-            keyboard = [[InlineKeyboardButton("🔗 অন্য Username দিন", callback_data="link")]]
+        # ✅ check + link এখন try_link_user() এর ভেতরে এক DB lock এর মধ্যে atomic ভাবে
+        # হয় — দুজন একসাথে একই username দিলে রেস কন্ডিশন হবে না
+        await update.message.reply_text("⏳ যাচাই করা হচ্ছে...")
+        client_id, ok = await lamix.verify_username_async(lamix_username)
+
+        if not ok:
+            keyboard = [[InlineKeyboardButton("🔗 আবার চেষ্টা করুন", callback_data="link")]]
             await update.message.reply_text(
-                f"❌ *এই username টি অন্য কেউ ব্যবহার করছে!*\n\n"
-                f"`{lamix_username}` ইতিমধ্যে লিঙ্ক করা আছে।\n"
-                f"এডমিনের দেওয়া আপনার নিজের username দিন।",
+                "❌ *Username সঠিক নয়!*\n\n"
+                "এডমিনের দেওয়া সঠিক Lamix username দিন।",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
 
-        await update.message.reply_text("⏳ যাচাই করা হচ্ছে...")
-        client_id, ok = await lamix.verify_username_async(lamix_username)
+        tg_username = update.effective_user.username or str(user_id)
+        linked = await try_link_user(user_id, tg_username, lamix_username, client_id)
 
-        if ok:
-            tg_username = update.effective_user.username or str(user_id)
-            await add_user(user_id, tg_username, lamix_username, client_id)
+        if linked:
             await update.message.reply_text(
                 f"✅ *সফলভাবে লিঙ্ক হয়েছে!*\n\n"
                 f"👤 Lamix Account: *{lamix_username}*\n"
@@ -200,10 +206,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown",
             )
         else:
-            keyboard = [[InlineKeyboardButton("🔗 আবার চেষ্টা করুন", callback_data="link")]]
+            keyboard = [[InlineKeyboardButton("🔗 অন্য Username দিন", callback_data="link")]]
             await update.message.reply_text(
-                "❌ *Username সঠিক নয়!*\n\n"
-                "এডমিনের দেওয়া সঠিক Lamix username দিন।",
+                f"❌ *এই username টি অন্য কেউ ব্যবহার করছে!*\n\n"
+                f"`{lamix_username}` ইতিমধ্যে লিঙ্ক করা আছে।\n"
+                f"এডমিনের দেওয়া আপনার নিজের username দিন।",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
@@ -302,27 +309,117 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
     country_code = selected.get("country_code", "")
     numbers = _post_process_numbers(numbers, country_code)
 
-    context.user_data["last_numbers"] = "\n".join(numbers)
-    context.user_data["country_code"] = country_code
+async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
 
-    code_already_in = (
-        bool(country_code) and
-        len(numbers) > 0 and
-        all(_num_has_code(n, country_code) for n in numbers)
-    )
-    has_plus = len(numbers) > 0 and all(n.startswith("+") for n in numbers)
-    context.user_data["code_embedded"] = code_already_in
-    context.user_data["has_plus"] = has_plus
+    # ✅ একই ইউজার ডাবল-ট্যাপ/দুই ডিভাইস থেকে একসাথে সাবমিট করলে এখানে আটকে যাবে
+    if user_id in _users_submitting:
+        await update.message.reply_text("⏳ আপনার আগের রিকোয়েস্ট এখনো প্রসেস হচ্ছে, অপেক্ষা করুন।")
+        return
+    _users_submitting.add(user_id)
 
-    numbers_text = "\n".join([f"`{n}`" for n in numbers])
-    keyboard = _build_number_buttons(country_code, code_already_in, has_plus)
+    try:
+        user = await get_user(user_id)
+        text = update.message.text.strip()
+        selected = context.user_data.get("selected_range")
+        max_per_order = await get_max_per_order()
 
-    await update.message.reply_text(
-        f"📱 *Allocated Numbers ({len(numbers)}):*\n\n{numbers_text}",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-    )
+        try:
+            quantity = int(text)
+        except ValueError:
+            await update.message.reply_text("❌ সংখ্যা লিখুন। উদাহরণ: 10")
+            return
 
+        if quantity < 1 or quantity > max_per_order:
+            await update.message.reply_text(f"❌ ১ থেকে {max_per_order} এর মধ্যে সংখ্যা দিন।")
+            return
+
+        remaining = user["daily_limit"] - user["daily_used"]
+        if quantity > remaining:
+            await update.message.reply_text(
+                f"❌ আজকের মাত্র *{remaining}টি* নম্বর নেওয়ার সুযোগ আছে।",
+                parse_mode="Markdown",
+            )
+            return
+
+        context.user_data.clear()
+        await update.message.reply_text("⏳ Queue-তে আছেন, একটু অপেক্ষা করুন...")
+
+        try:
+            async with _allocation_lock:
+                # ✅ queue-তে অপেক্ষার সময় usage বদলে যেতে পারে — lock পাওয়ার পর
+                # আরেকবার তাজা ডেটা দিয়ে remaining যাচাই
+                fresh_user = await get_user(user_id)
+                fresh_remaining = fresh_user["daily_limit"] - fresh_user["daily_used"]
+                if quantity > fresh_remaining:
+                    await update.message.reply_text(
+                        f"❌ আজকের মাত্র *{fresh_remaining}টি* নম্বর নেওয়ার সুযোগ আছে।",
+                        parse_mode="Markdown",
+                    )
+                    return
+                result = await asyncio.wait_for(
+                    lamix.allocate_numbers_async(user["client_id"], selected["id"], quantity),
+                    timeout=120
+                )
+        except asyncio.TimeoutError:
+            await update.message.reply_text("⏰ অনেকক্ষণ queue-তে ছিলেন, আবার চেষ্টা করুন।")
+            return
+
+        if not result or result.get("status") != "success":
+            keyboard = [[InlineKeyboardButton("📩 Request Range", callback_data=f"request_range_{selected['name']}")]]
+            await update.message.reply_text(
+                f"❌ *Allocation Failed!*\n\n📦 Range: *{selected['name']}*\n"
+                f"🔢 Quantity: *{quantity}*\n\n⚠️ No numbers available",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            return
+
+        numbers = result.get("numbers", [])
+        await update_usage(user_id, len(numbers))
+        updated_user = await get_user(user_id)
+
+        shortfall_note = ""
+        if len(numbers) < quantity:
+            shortfall_note = f"\n⚠️ চাওয়া হয়েছিল *{quantity}*, পাওয়া গেছে *{len(numbers)}*"
+
+        await update.message.reply_text(
+            f"✅ *Order Created Successfully*\n\n"
+            f"📦 Range: *{selected['name']}*\n"
+            f"🔢 Quantity: *{len(numbers)}*\n"
+            f"💳 Payterm: *{selected.get('payterm', 'Weekly')}*\n"
+            f"💰 Payout: *${selected.get('payout', '0.01')}*"
+            f"{shortfall_note}\n\n"
+            f"📊 {updated_user['daily_used']}/{updated_user['daily_limit']} used today",
+            parse_mode="Markdown",
+        )
+
+        country_code = selected.get("country_code", "")
+        numbers = _post_process_numbers(numbers, country_code)
+
+        context.user_data["last_numbers"] = "\n".join(numbers)
+        context.user_data["country_code"] = country_code
+
+        code_already_in = (
+            bool(country_code) and
+            len(numbers) > 0 and
+            all(_num_has_code(n, country_code) for n in numbers)
+        )
+        has_plus = len(numbers) > 0 and all(n.startswith("+") for n in numbers)
+        context.user_data["code_embedded"] = code_already_in
+        context.user_data["has_plus"] = has_plus
+
+        numbers_text = "\n".join([f"`{n}`" for n in numbers])
+        keyboard = _build_number_buttons(country_code, code_already_in, has_plus)
+
+        await update.message.reply_text(
+            f"📱 *Allocated Numbers ({len(numbers)}):*\n\n{numbers_text}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
+        )
+    finally:
+        # ✅ যেকোনো path দিয়ে ফাংশন শেষ হোক (success/fail/return) — গার্ড সবসময় রিলিজ হবে
+        _users_submitting.discard(user_id)
 
 # ══════════════════════════════════════════════
 #  CALLBACK HANDLER
