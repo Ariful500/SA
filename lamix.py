@@ -421,13 +421,14 @@ def update_client_payment(lamix_username: str, payment_type: str, value: str) ->
     value: UID (binance) বা নাম্বার (bkash/nagad)
     """
     print("🔥🔥🔥 [PaymentUpdate] FUNCTION CALLED 🔥🔥🔥")
-    s = _get_session()
-    if not s:
-        return False
 
     info = get_client_full_info(lamix_username)
     if not info or not info.get("id"):
         print(f"[PaymentUpdate] Client not found: {lamix_username}")
+        return False
+
+    s = _get_session()
+    if not s:
         return False
 
     skype_val = info["skype"]
@@ -473,6 +474,12 @@ def update_client_payment(lamix_username: str, payment_type: str, value: str) ->
         print(f"[PaymentUpdate] Sent data: {data}")
         print(f"[PaymentUpdate] Status: {resp.status_code}")
         print(f"[PaymentUpdate] Response (first 500 chars): {resp.text[:500]}")
+
+        # ✅ Debug: আপডেটের পরপরই verify করো
+        time.sleep(1)
+        verify_info = get_client_full_info(lamix_username)
+        print(f"[PaymentUpdate] VERIFY after update: {verify_info}")
+
         return resp.status_code == 200
 
     except Exception as e:
