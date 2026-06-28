@@ -161,7 +161,10 @@ async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from database import sync_total_allocated
     total = await sync_total_allocated(update.effective_user.id, user["username"])
     
-    keyboard = [[InlineKeyboardButton("❌ Unlink Account", callback_data="confirm_unlink")]]
+    keyboard = [
+        [InlineKeyboardButton("💳 Payment", callback_data="payment_menu")],
+        [InlineKeyboardButton("❌ Unlink Account", callback_data="confirm_unlink")],
+    ]
     await update.message.reply_text(
         f"👤 *Account Information*\n"
         f"{'━' * 22}\n\n"
