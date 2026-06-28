@@ -53,6 +53,132 @@ SEEN_SMS_FILE = "seen_sms.json"
 _seen_sms: set[str] = set()
 _number_sms_count: dict[str, int] = {}
 
+LEADERBOARD_FILE = "leaderboard_sms.json"
+ALLTIME_LEADERBOARD_FILE = "alltime_leaderboard.json"
+_leaderboard_counts: dict[str, int] = {}
+_alltime_counts: dict[str, int] = {}
+
+
+def _load_leaderboard():
+    global _leaderboard_counts
+    try:
+        if os.path.exists(LEADERBOARD_FILE):
+            with open(LEADERBOARD_FILE, "r") as f:
+                data = json.load(f)
+                _leaderboard_counts = dict(data.get("counts", {}))
+                logger.info(f"✅ Leaderboard লোড হয়েছে: {len(_leaderboard_counts)} client")
+        else:
+            _leaderboard_counts = {}
+    except Exception as e:
+        logger.error(f"[Leaderboard] Load error: {e}")
+        _leaderboard_counts = {}
+
+
+def _load_alltime_leaderboard():
+    global _alltime_counts
+    try:
+        if os.path.exists(ALLTIME_LEADERBOARD_FILE):
+            with open(ALLTIME_LEADERBOARD_FILE, "r") as f:
+                _alltime_counts = dict(json.load(f).get("counts", {}))
+                logger.info(f"✅ All Time Leaderboard লোড হয়েছে: {len(_alltime_counts)} client")
+        else:
+            _alltime_counts = {}
+    except Exception as e:
+        logger.error(f"[AllTime] Load error: {e}")
+        _alltime_counts = {}
+
+
+def _save_leaderboard():
+    import datetime
+    try:
+        now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+        today_str = now_bd.strftime("%Y-%m-%d")
+        with open(LEADERBOARD_FILE, "w") as f:
+            json.dump({"date": today_str, "counts": _leaderboard_counts}, f)
+        subprocess.run(["git", "add", LEADERBOARD_FILE], check=False)
+        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
+        if result.returncode != 0:
+            subprocess.run(["git", "commit", "-m", "📊 Leaderboard updated"], check=False)
+            subprocess.run(["git", "push", "origin", "main"], check=False)
+    except Exception as e:
+        logger.error(f"[Leaderboard] Save error: {e}")
+
+
+def _save_alltime_leaderboard():
+    try:
+        with open(ALLTIME_LEADERBOARD_FILE, "w") as f:
+            json.dump({"counts": _alltime_counts}, f)
+        subprocess.run(["git", "add", ALLTIME_LEADERBOARD_FILE], check=False)
+        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
+        if result.returncode != 0:
+            subprocess.run(["git", "commit", "-m", "🌟 All Time Leaderboard updated"], check=False)
+            subprocess.run(["git", "push", "origin", "main"], check=False)
+    except Exception as e:
+        logger.error(f"[AllTime] Save error: {e}")
+
+
+def _reset_leaderboard():
+    global _leaderboard_counts
+    _leaderboard_counts = {}
+    try:
+        with open(LEADERBOARD_FILE, "w") as f:
+            json.dump({"date": "", "counts": {}}, f)
+        subprocess.run(["git", "add", LEADERBOARD_FILE], check=False)
+        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
+        if result.returncode != 0:
+            subprocess.run(["git", "commit", "-m", "🔄 Leaderboard reset"], check=False)
+            subprocess.run(["git", "push", "origin", "main"], check=False)
+    except Exception as e:
+        logger.error(f"[Leaderboard] Reset error: {e}")
+    logger.info("🔄 Leaderboard reset হয়েছে।")
+
+
+def _load_leaderboard():
+    global _leaderboard_counts
+    try:
+        if os.path.exists(LEADERBOARD_FILE):
+            with open(LEADERBOARD_FILE, "r") as f:
+                data = json.load(f)
+                _leaderboard_counts = dict(data.get("counts", {}))
+                logger.info(f"✅ Leaderboard লোড হয়েছে: {len(_leaderboard_counts)} client")
+        else:
+            _leaderboard_counts = {}
+    except Exception as e:
+        logger.error(f"[Leaderboard] Load error: {e}")
+        _leaderboard_counts = {}
+
+
+def _save_leaderboard():
+    import datetime
+    try:
+        now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+        today_str = now_bd.strftime("%Y-%m-%d")
+        with open(LEADERBOARD_FILE, "w") as f:
+            json.dump({"date": today_str, "counts": _leaderboard_counts}, f)
+        subprocess.run(["git", "add", LEADERBOARD_FILE], check=False)
+        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
+        if result.returncode != 0:
+            subprocess.run(["git", "commit", "-m", "📊 Leaderboard updated"], check=False)
+            subprocess.run(["git", "push", "origin", "main"], check=False)
+    except Exception as e:
+        logger.error(f"[Leaderboard] Save error: {e}")
+
+
+def _reset_leaderboard():
+    global _leaderboard_counts
+    _leaderboard_counts = {}
+    try:
+        with open(LEADERBOARD_FILE, "w") as f:
+            json.dump({"date": "", "counts": {}}, f)
+        subprocess.run(["git", "add", LEADERBOARD_FILE], check=False)
+        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
+        if result.returncode != 0:
+            subprocess.run(["git", "commit", "-m", "🔄 Leaderboard reset"], check=False)
+            subprocess.run(["git", "push", "origin", "main"], check=False)
+    except Exception as e:
+        logger.error(f"[Leaderboard] Reset error: {e}")
+    logger.info("🔄 Leaderboard reset হয়েছে।")
+
 
 def _sms_unique_id(row: list) -> str:
     return f"{row[0]}|{row[2]}|{row[3]}|{str(row[5])[:20]}"
@@ -147,6 +273,13 @@ async def sms_monitor_loop(app: Application):
 
             new_rows.sort(key=lambda r: str(r[0]))  # পুরনো → নতুন (chronological)
 
+            # ✅ Leaderboard count আপডেট
+            for row in new_rows:
+                client = str(row[4]).strip() if len(row) > 4 else ""
+                if client:
+                    _leaderboard_counts[client] = _leaderboard_counts.get(client, 0) + 1
+                    _alltime_counts[client] = _alltime_counts.get(client, 0) + 1
+
             number_limits = {}
             if new_rows:
                 number_limits = await lamix.fetch_number_limits_async()
@@ -224,7 +357,9 @@ async def sms_monitor_loop(app: Application):
                     logger.error(f"[SMS Monitor] Send error: {e}")
 
             if new_rows:
-                _save_seen_sms()  # এই ৫-সেকেন্ড ব্যাচের সব নতুন SMS একসাথে সেভ
+                _save_seen_sms()
+                _save_leaderboard()
+                _save_alltime_leaderboard()
 
         except Exception as e:
             logger.error(f"[SMS Monitor] Loop error: {e}")
@@ -311,7 +446,8 @@ async def _startup_reset_check(app: Application):
     logger.info(f"🔄 Startup reset চলছে...")
     count = await reset_all_limits()
     _reset_seen_sms()
-    logger.info("🔄 Seen SMS reset হয়েছে।")
+    _reset_leaderboard()
+    logger.info("🔄 Seen SMS ও Leaderboard reset হয়েছে।")
     current_limit = await get_daily_limit()
     try:
         with open(RESET_FLAG_FILE, "w") as f:
@@ -334,6 +470,8 @@ async def _startup_reset_check(app: Application):
 async def post_init(app: Application):
     await init_db()
     _load_seen_sms()
+    _load_leaderboard()
+    _load_alltime_leaderboard()
     await _startup_reset_check(app)
     await app.bot.set_my_commands(_USER_CMDS)
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
@@ -375,7 +513,7 @@ def main():
     app.add_handler(CommandHandler("refresh",     refresh_command,     filters=PRIVATE_ONLY))
     app.add_handler(CommandHandler("addlimit",    addlimit_command,    filters=PRIVATE_ONLY))
     app.add_handler(CommandHandler("reset",       reset_command,       filters=PRIVATE_ONLY))
-    app.add_handler(CommandHandler("leaderboard", leaderboard_command))
+    app.add_handler(CommandHandler("leaderboard", leaderboard_command, filters=None))
     app.add_handler(CommandHandler("fetchlimit",  fetchlimit_command,  filters=PRIVATE_ONLY))
     app.add_handler(CommandHandler("broadcast",   broadcast_command,   filters=PRIVATE_ONLY))
     app.add_handler(CommandHandler("ban",         ban_command,         filters=PRIVATE_ONLY))
