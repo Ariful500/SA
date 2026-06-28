@@ -132,54 +132,6 @@ def _reset_leaderboard():
         logger.error(f"[Leaderboard] Reset error: {e}")
     logger.info("🔄 Leaderboard reset হয়েছে।")
 
-
-def _load_leaderboard():
-    global _leaderboard_counts
-    try:
-        if os.path.exists(LEADERBOARD_FILE):
-            with open(LEADERBOARD_FILE, "r") as f:
-                data = json.load(f)
-                _leaderboard_counts = dict(data.get("counts", {}))
-                logger.info(f"✅ Leaderboard লোড হয়েছে: {len(_leaderboard_counts)} client")
-        else:
-            _leaderboard_counts = {}
-    except Exception as e:
-        logger.error(f"[Leaderboard] Load error: {e}")
-        _leaderboard_counts = {}
-
-
-def _save_leaderboard():
-    import datetime
-    try:
-        now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
-        today_str = now_bd.strftime("%Y-%m-%d")
-        with open(LEADERBOARD_FILE, "w") as f:
-            json.dump({"date": today_str, "counts": _leaderboard_counts}, f)
-        subprocess.run(["git", "add", LEADERBOARD_FILE], check=False)
-        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
-        if result.returncode != 0:
-            subprocess.run(["git", "commit", "-m", "📊 Leaderboard updated"], check=False)
-            subprocess.run(["git", "push", "origin", "main"], check=False)
-    except Exception as e:
-        logger.error(f"[Leaderboard] Save error: {e}")
-
-
-def _reset_leaderboard():
-    global _leaderboard_counts
-    _leaderboard_counts = {}
-    try:
-        with open(LEADERBOARD_FILE, "w") as f:
-            json.dump({"date": "", "counts": {}}, f)
-        subprocess.run(["git", "add", LEADERBOARD_FILE], check=False)
-        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
-        if result.returncode != 0:
-            subprocess.run(["git", "commit", "-m", "🔄 Leaderboard reset"], check=False)
-            subprocess.run(["git", "push", "origin", "main"], check=False)
-    except Exception as e:
-        logger.error(f"[Leaderboard] Reset error: {e}")
-    logger.info("🔄 Leaderboard reset হয়েছে।")
-
-
 def _sms_unique_id(row: list) -> str:
     return f"{row[0]}|{row[2]}|{row[3]}|{str(row[5])[:20]}"
 
@@ -363,7 +315,7 @@ async def sms_monitor_loop(app: Application):
                 _save_alltime_leaderboard()
 
             # ✅ Available 0 হলে admin notify — প্রতি ৫ মিনিটে একবার check
-            _range_check_counter = _range_check_counter + 1 if "_range_check_counter" in dir() else 1
+            _range_check_counter += 1
             if _range_check_counter >= 60:  # ৫ সেকেন্ড × ৬০ = ৫ মিনিট
                 _range_check_counter = 0
                 try:
