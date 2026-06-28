@@ -429,8 +429,51 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── Payment Method Selected ──
+    # ── Payment Method Selected ──
     if data in ("pay_binance", "pay_bkash", "pay_nagad"):
         method = data[len("pay_"):]  # binance / bkash / nagad
+
+        if not user or not user.get("username"):
+            await query.answer("⚠️ আগে /link দিয়ে অ্যাকাউন্ট লিঙ্ক করুন।", show_alert=True)
+            return
+
+        # ✅ আগের payment method চেক করো — থাকলে warning দেখাও
+        client_info = await lamix.get_client_full_info_async(user["username"])
+        existing = lamix.parse_payment_info(client_info)
+
+        if existing and existing["method"] != method:
+            labels = {"binance": "Binance", "bkash": "Bkash", "nagad": "Nagad"}
+            context.user_data["pending_payment_switch"] = method
+            keyboard = [
+                [InlineKeyboardButton("✅ হ্যাঁ, রিসেট করুন", callback_data=f"confirm_pay_switch_{method}")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
+            ]
+            await query.edit_message_text(
+                f"⚠️ *আপনার আগে থেকে {labels[existing['method']]} সেট করা আছে:*\n"
+                f"`{existing['value']}`\n\n"
+                f"নতুন *{labels[method]}* অ্যাড করলে আগেরটা মুছে যাবে।\n"
+                f"আপনি কি নিশ্চিত?",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            return
+
+        context.user_data["waiting_for_payment_value"] = method
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
+        if method == "binance":
+            prompt = "🟡 *Binance UID পাঠান:*"
+        elif method == "bkash":
+            prompt = "📱 *Bkash নাম্বার পাঠান:*"
+        else:
+            prompt = "📱 *Nagad নাম্বার পাঠান:*"
+        await query.edit_message_text(
+            prompt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    # ── Confirm Payment Switch ──
+    if data.startswith("confirm_pay_switch_"):
+        method = data[len("confirm_pay_switch_"):]
         context.user_data["waiting_for_payment_value"] = method
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         if method == "binance":
