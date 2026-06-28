@@ -661,6 +661,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ── Request Range (User) ──
+    if data.startswith("request_range_"):
+        range_name = data[len("request_range_"):]
+        tg_uname = f"@{update.effective_user.username}" if update.effective_user.username else str(user_id)
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(
+                    f"📩 *Range Request!*\n\n"
+                    f"📦 Range: *{range_name}*\n"
+                    f"👤 User: {tg_uname}\n"
+                    f"🆔 `{user_id}`\n\n"
+                    f"এই range এ নতুন নম্বর যোগ করুন।"
+                ),
+                parse_mode="Markdown",
+            )
+            await query.answer("✅ Request পাঠানো হয়েছে!", show_alert=True)
+        except Exception as e:
+            print(f"[RequestRange] Admin notify failed: {e}")
+            await query.answer("⚠️ Request পাঠাতে সমস্যা হয়েছে।", show_alert=True)
+        return
+    
     # ── Approve Reset (Admin) ──
     if data.startswith("approve_reset_"):
         if user_id != ADMIN_ID:
