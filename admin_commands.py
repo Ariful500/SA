@@ -69,7 +69,9 @@ async def addlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # নতুন
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import datetime
-    from bot import _leaderboard_counts, _alltime_counts
+    from bot import get_leaderboard_counts, get_alltime_counts
+    _leaderboard_counts = get_leaderboard_counts()
+    _alltime_counts = get_alltime_counts()
 
     bd_time = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
     now_str = bd_time.strftime("%I:%M %p")
