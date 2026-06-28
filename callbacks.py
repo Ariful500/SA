@@ -232,9 +232,17 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     context.user_data.clear()
-    await update.message.reply_text("⏳ নম্বর অ্যালোকেট করা হচ্ছে...")
+    await update.message.reply_text("⏳ Queue-তে আছেন, একটু অপেক্ষা করুন...")
 
-    result = await lamix.allocate_numbers_async(user["client_id"], selected["id"], quantity)
+    try:
+        async with _allocation_lock:
+            result = await asyncio.wait_for(
+                lamix.allocate_numbers_async(user["client_id"], selected["id"], quantity),
+                timeout=120
+            )
+    except asyncio.TimeoutError:
+        await update.message.reply_text("⏰ অনেকক্ষণ queue-তে ছিলেন, আবার চেষ্টা করুন।")
+        return
 
     if not result or result.get("status") != "success":
         keyboard = [[InlineKeyboardButton("📩 Request Range", callback_data=f"request_range_{selected['name']}")]]
