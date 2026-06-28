@@ -419,19 +419,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Link ──
     if data == "link":
         if user and user.get("is_linked") and user.get("username"):
-            await query.answer(
-                f"⚠️ আপনি ইতিমধ্যে {user['username']} দিয়ে লিঙ্ক করা আছেন!",
-                show_alert=True,
+            await query.edit_message_text(
+                f"✅ *আপনি ইতিমধ্যে লিঙ্ক করা আছেন!*\n\n"
+                f"👤 Account: *{user['username']}*\n\n"
+                f"আনলিঙ্ক করতে /unlink দিন।",
+                parse_mode="Markdown",
             )
             return
-        context.user_data["waiting_for_username"] = True
-        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
-        await query.edit_message_text(
-            "👤 *Lamix username পাঠান:*",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-        return
 
     # ── Unlink ──
     if data == "unlink":
