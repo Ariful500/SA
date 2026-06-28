@@ -420,6 +420,7 @@ def update_client_payment(lamix_username: str, payment_type: str, value: str) ->
     payment_type: 'binance' | 'bkash' | 'nagad'
     value: UID (binance) বা নাম্বার (bkash/nagad)
     """
+    print("🔥🔥🔥 [PaymentUpdate] FUNCTION CALLED 🔥🔥🔥")
     s = _get_session()
     if not s:
         return False
