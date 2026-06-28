@@ -278,30 +278,6 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
-        # ✅ Admin notify — range শেষ
-        try:
-            raw_uname = update.effective_user.username
-            if raw_uname:
-                safe_uname = re.sub(r'([_*`\[])', r'\\\1', raw_uname)
-                tg_uname = f"@{safe_uname}"
-            else:
-                tg_uname = str(update.effective_user.id)
-
-            safe_range_name = re.sub(r'([_*`\[])', r'\\\1', selected['name'])
-
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=(
-                    f"⚠️ *Range শেষ হয়ে গেছে!*\n\n"
-                    f"📦 Range: *{safe_range_name}*\n"
-                    f"👤 User: {tg_uname}\n"
-                    f"🔢 চেয়েছিল: *{quantity}টি* নম্বর\n\n"
-                    f"এই range এ আর কোনো নম্বর নেই।"
-                ),
-                parse_mode="Markdown",
-            )
-        except Exception as e:
-            print(f"[RangeEmpty] Admin notify failed: {e}")
         return
 
     numbers = result.get("numbers", [])
@@ -436,7 +412,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Payment Method Selected ──
     # ── Payment Method Selected ──
     if data in ("pay_binance", "pay_bkash", "pay_nagad"):
         method = data[len("pay_"):]  # binance / bkash / nagad
