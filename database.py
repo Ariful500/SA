@@ -60,14 +60,27 @@ def _load() -> dict:
             return {}
 
 
+import threading
+
+def _git_commit_push_background(filepath: str, message: str):
+    """File save হওয়ার পরে background এ push — main thread block হয় না"""
+    t = threading.Thread(
+        target=_git_commit_push,
+        args=(filepath, message),
+        daemon=True,
+    )
+    t.start()
+
+
 def _save(data: dict, git_message: str = "💾 Auto-save: users data updated"):
     with _db_lock:
         tmp_file = f"{DB_FILE}.tmp"
         with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(tmp_file, DB_FILE)
-    # ✅ lock ছাড়ার পরে push হচ্ছে — অন্য ইউজারের read/write আটকাবে না
-    _git_commit_push(DB_FILE, git_message)
+    # ✅ File disk এ save হয়ে গেছে, push background এ চলবে
+    # কেউ crash করলেও data নষ্ট হবে না — শুধু git history miss হতে পারে
+    _git_commit_push_background(DB_FILE, git_message)
 
 
 def _load_settings() -> dict:
@@ -124,18 +137,23 @@ async def get_max_per_order() -> int:
     return settings.get("max_per_order", _DEFAULT_MAX_PER_ORDER)
 
 async def set_daily_limit(new_limit: int) -> int:
-    def _do():
-        with _settings_lock, _db_lock:
+    # ✅ দুটো lock আলাদা আলাদা — একসাথে ধরা হচ্ছে না, deadlock নেই
+    def _update_settings():
+        with _settings_lock:
             settings = _load_settings()
             settings["daily_limit"] = new_limit
             _save_settings(settings, f"⚙️ Daily limit changed to {new_limit}")
 
+    def _update_users():
+        with _db_lock:
             data = _load()
             for uid in data:
                 data[uid]["daily_limit"] = new_limit
             _save(data, f"⚙️ Daily limit applied to all users: {new_limit}")
             return len(data)
-    return await asyncio.to_thread(_do)
+
+    await asyncio.to_thread(_update_settings)
+    return await asyncio.to_thread(_update_users)
 
 
 async def set_max_per_order(new_max: int):
