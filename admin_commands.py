@@ -236,26 +236,32 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def userlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def userlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
         return
-    users = await get_all_users()
-    if not users:
-        await update.message.reply_text("📋 এখনো কোনো ইউজার নেই।")
-        return
-    text = f"👥 *User List* ({len(users)} জন)\n\n"
-    for i, u in enumerate(users, 1):
-        status = "🚫" if u["is_banned"] else "✅"
-        uname = f"@{u['telegram_username']}" if u["telegram_username"] else "N/A"
-        text += (
-            f"{i}. {status} {uname}\n"
-            f"   🧑 `{u['username']}` | 📊 {u['daily_used']}/{u['daily_limit']} | 🔄 {u['total_allocated']}\n\n"
-        )
-    if len(text) > 4000:
-        for chunk in [text[i:i+4000] for i in range(0, len(text), 4000)]:
-            await update.message.reply_text(chunk, parse_mode="Markdown")
-    else:
-        await update.message.reply_text(text, parse_mode="Markdown")
+    try:
+        users = await get_all_users()
+        if not users:
+            await update.message.reply_text("📋 এখনো কোনো ইউজার নেই।")
+            return
+        text = f"👥 User List ({len(users)} জন)\n\n"
+        for i, u in enumerate(users, 1):
+            status = "🚫" if u["is_banned"] else "✅"
+            tg_uname = u.get("telegram_username") or "N/A"
+            uname = f"@{tg_uname}"
+            lamix_uname = u.get("username") or "Not Linked"
+            text += (
+                f"{i}. {status} {uname}\n"
+                f"   🧑 {lamix_uname} | 📊 {u['daily_used']}/{u['daily_limit']} | 🔄 {u['total_allocated']}\n\n"
+            )
+        if len(text) > 4000:
+            for chunk in [text[i:i+4000] for i in range(0, len(text), 4000)]:
+                await update.message.reply_text(chunk)
+        else:
+            await update.message.reply_text(text)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Userlist Error: {e}")
 
 
 async def autoapprove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
