@@ -343,7 +343,17 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
         )
 
         country_code = selected.get("country_code", "")
+
+        # Palestine এর জন্য dynamic country code
+        if country_code == "970" and numbers:
+            first = numbers[0].lstrip("+")
+            if first.startswith("972"):
+                country_code = "972"
+            elif first.startswith("970"):
+                country_code = "970"
+
         numbers = _post_process_numbers(numbers, country_code)
+        context.user_data["country_code"] = country_code
 
         context.user_data["last_numbers"] = "\n".join(numbers)
         context.user_data["country_code"] = country_code
