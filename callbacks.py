@@ -35,7 +35,7 @@ async def _show_ranges(update: Update, context: ContextTypes.DEFAULT_TYPE, page:
             await update.message.reply_text(msg)
         return
 
-    per_page = 8
+    per_page = 12
     total_pages = max(1, (len(ranges) + per_page - 1) // per_page)
     page_ranges = ranges[page * per_page:(page + 1) * per_page]
 
@@ -255,6 +255,22 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+        # ✅ Admin notify — range শেষ
+        try:
+            tg_uname = f"@{update.effective_user.username}" if update.effective_user.username else str(update.effective_user.id)
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(
+                    f"⚠️ *Range শেষ হয়ে গেছে!*\n\n"
+                    f"📦 Range: *{selected['name']}*\n"
+                    f"👤 User: {tg_uname}\n"
+                    f"🔢 চেয়েছিল: *{quantity}টি* নম্বর\n\n"
+                    f"এই range এ আর কোনো নম্বর নেই।"
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            print(f"[RangeEmpty] Admin notify failed: {e}")
         return
 
     numbers = result.get("numbers", [])
