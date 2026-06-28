@@ -319,7 +319,6 @@ async def sms_monitor_loop(app: Application):
             if _range_check_counter >= 60:  # ৫ সেকেন্ড × ৬০ = ৫ মিনিট
                 _range_check_counter = 0
                 try:
-                    import datetime
                     now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
                     if 6 <= now_bd.hour < 24:
                         ranges = await lamix.fetch_ranges_async()
