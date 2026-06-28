@@ -147,22 +147,66 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         text += "আজকে এখনো কোনো SMS আসেনি।"
 
     # ── All Time ──
-    text += "\n\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n\n"
-    text += "🌟 *All Time Leaderboard*\n\n"
+async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import datetime
+    import json
+
+    # সরাসরি JSON থেকে পড়া
+    try:
+        with open("leaderboard_sms.json", "r") as f:
+            _leaderboard_counts = {
+                k: v for k, v in json.load(f).get("counts", {}).items()
+                if k and k.lower() != "none"
+            }
+    except Exception:
+        _leaderboard_counts = {}
+
+    try:
+        with open("alltime_leaderboard.json", "r") as f:
+            _alltime_counts = {
+                k: v for k, v in json.load(f).get("counts", {}).items()
+                if k and k.lower() != "none"
+            }
+    except Exception:
+        _alltime_counts = {}
+
+    bd_time = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+    now_str = bd_time.strftime("%I:%M %p")
+    date_str = bd_time.strftime("%d %B %Y")
+
+    medals = ["🥇", "🥈", "🥉"]
+
+    def mask(name):
+        if len(name) > 3:
+            return name[:-3] + "×××"
+        return "×××"
+
+    # ── Today ──
+    today_lines = ["🏆 Today SMS Leaderboard 🏆", ""]
+    if _leaderboard_counts:
+        sorted_today = sorted(_leaderboard_counts.items(), key=lambda x: x[1], reverse=True)
+        for i, (client, count) in enumerate(sorted_today[:20]):
+            prefix = medals[i] if i < 3 else f"{i+1}."
+            today_lines.append(f"{prefix} {mask(client)} — {count}")
+    else:
+        today_lines.append("আজকে এখনো কোনো SMS আসেনি।")
+
+    # ── All Time ──
+    alltime_lines = ["🌟 All Time Leaderboard 🌟", ""]
     if _alltime_counts:
         sorted_alltime = sorted(_alltime_counts.items(), key=lambda x: x[1], reverse=True)
-        total_alltime = sum(c for _, c in sorted_alltime)
-        medals = ["🥇", "🥈", "🥉"]
         for i, (client, count) in enumerate(sorted_alltime[:20]):
-            masked = (client[:-3] + "***") if len(client) > 3 else "***"
             prefix = medals[i] if i < 3 else f"{i+1}."
-            text += f"{prefix} {masked} — *{count:,}*\n"
-        text += f"\n📊 Total: *{total_alltime:,} SMS*"
+            alltime_lines.append(f"{prefix} {mask(client)} — {count:,}")
     else:
-        text += "এখনো কোনো data নেই।"
+        alltime_lines.append("এখনো কোনো data নেই।")
 
-    await update.message.reply_text(text, parse_mode="Markdown")
+    text = "\n".join(today_lines)
+    text += "\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    text += "\n".join(alltime_lines)
+    text += f"\n\n⏰ {now_str} | {date_str}"
 
+    await update.message.reply_text(text)
 async def fetchlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
