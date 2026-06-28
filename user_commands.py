@@ -158,7 +158,6 @@ async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await get_user(update.effective_user.id)
     
     # Lamix থেকে live count sync করো
-    await update.message.reply_text("⏳ তথ্য লোড হচ্ছে...")
     from database import sync_total_allocated
     total = await sync_total_allocated(update.effective_user.id, user["username"])
 
