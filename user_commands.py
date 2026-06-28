@@ -62,7 +62,19 @@ def _fix_malaysia(number: str) -> str:
 def _post_process_numbers(numbers: list[str], country_code: str) -> list[str]:
     if country_code == "60":
         return [_fix_malaysia(n) for n in numbers]
+    if country_code == "970":
+        return [_fix_palestine(n) for n in numbers]
     return numbers
+
+
+def _fix_palestine(number: str) -> str:
+    # number যদি 972 দিয়ে শুরু হয় তাহলে country code 972
+    # number যদি 970 দিয়ে শুরু হয় তাহলে country code 970
+    if number.startswith("972") or number.startswith("+972"):
+        return number  # already correct
+    if number.startswith("970") or number.startswith("+970"):
+        return number  # already correct
+    return number
 
 
 def _build_number_buttons(country_code: str, code_embedded: bool, has_plus: bool) -> list:
