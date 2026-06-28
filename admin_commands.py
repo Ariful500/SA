@@ -182,31 +182,31 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return "×××"
 
     # ── Today ──
-    today_lines = ["🏆 Today SMS Leaderboard 🏆", ""]
+    today_lines = ["<b>🏆 Today SMS Leaderboard 🏆</b>", ""]
     if _leaderboard_counts:
         sorted_today = sorted(_leaderboard_counts.items(), key=lambda x: x[1], reverse=True)
         for i, (client, count) in enumerate(sorted_today[:20]):
             prefix = medals[i] if i < 3 else f"{i+1}."
-            today_lines.append(f"{prefix} {mask(client)} — {count}")
+            today_lines.append(f"<b>{prefix} {mask(client)} — {count}</b>")
     else:
-        today_lines.append("আজকে এখনো কোনো SMS আসেনি।")
+        today_lines.append("<b>আজকে এখনো কোনো SMS আসেনি।</b>")
 
-    # ── All Time ──
-    alltime_lines = ["🌟 All Time Leaderboard 🌟", ""]
+    alltime_lines = ["<b>🌟 All Time Leaderboard 🌟</b>", ""]
     if _alltime_counts:
         sorted_alltime = sorted(_alltime_counts.items(), key=lambda x: x[1], reverse=True)
         for i, (client, count) in enumerate(sorted_alltime[:20]):
             prefix = medals[i] if i < 3 else f"{i+1}."
-            alltime_lines.append(f"{prefix} {mask(client)} — {count:,}")
+            alltime_lines.append(f"<b>{prefix} {mask(client)} — {count:,}</b>")
     else:
-        alltime_lines.append("এখনো কোনো data নেই।")
+        alltime_lines.append("<b>এখনো কোনো data নেই।</b>")
 
     text = "\n".join(today_lines)
     text += "\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
     text += "\n".join(alltime_lines)
-    text += f"\n\n⏰ {now_str} | {date_str}"
+    text += f"\n\n<b>⏰ {now_str} | {date_str}</b>"
 
-    await update.message.reply_text(text)
+    await update.message.reply_text(text, parse_mode="HTML")
+    
 async def fetchlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
