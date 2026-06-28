@@ -314,7 +314,7 @@ async def sms_monitor_loop(app: Application):
                 _save_leaderboard()
                 _save_alltime_leaderboard()
 
-            except Exception as e:
+        except Exception as e:
             logger.error(f"[SMS Monitor] Loop error: {e}")
 
         await asyncio.sleep(5)
