@@ -236,7 +236,6 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def userlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-async def userlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("🚫 শুধু অ্যাডমিনের জন্য।")
         return
