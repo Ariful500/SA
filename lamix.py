@@ -258,7 +258,7 @@ def fetch_ranges() -> list[dict]:
                 range_dict[range_name]["numbers"].append(number)
                 range_dict[range_name]["number_ids"].append(num_id)
 
-        result = [r for r in range_dict.values() if r["available"] > 0]
+        result = list(range_dict.values())
         result.sort(key=lambda x: x["name"].upper())
 
         print(f"[Ranges] Available ranges (A→Z): {len(result)}")
