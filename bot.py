@@ -97,7 +97,6 @@ def _save_seen_sms():
     except Exception as e:
         logger.error(f"[SeenSMS] Save error: {e}")
 
-
 def _reset_seen_sms():
     """সকাল ৬টায় seen SMS ও per-number count রিসেট করো"""
     global _seen_sms, _number_sms_count
@@ -106,6 +105,11 @@ def _reset_seen_sms():
     try:
         with open(SEEN_SMS_FILE, "w") as f:
             json.dump({"seen": [], "counts": {}}, f)
+        subprocess.run(["git", "add", SEEN_SMS_FILE], check=False)
+        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
+        if result.returncode != 0:
+            subprocess.run(["git", "commit", "-m", "🔄 Seen SMS reset"], check=False)
+            subprocess.run(["git", "push", "origin", "main"], check=False)
     except Exception as e:
         logger.error(f"[SeenSMS] Reset error: {e}")
     logger.info("🔄 SMS seen list রিসেট হয়েছে।")
