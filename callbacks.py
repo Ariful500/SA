@@ -3,8 +3,15 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-# ✅ Allocation Queue Lock — সবার allocation request সিরিয়ালাইজড করে
-_allocation_lock = asyncio.Lock()
+# ✅ Per-range lock — শুধু একই range এ conflict আটকায়, বাকিরা parallel চলে
+_range_locks: dict[str, asyncio.Lock] = {}
+_range_locks_mutex = asyncio.Lock()
+
+async def _get_range_lock(range_id: str) -> asyncio.Lock:
+    async with _range_locks_mutex:
+        if range_id not in _range_locks:
+            _range_locks[range_id] = asyncio.Lock()
+        return _range_locks[range_id]
 
 # ✅ একজন ইউজার ডাবল-ট্যাপ/দুই ডিভাইস থেকে একসাথে quantity সাবমিট করলে
 # ডুপ্লিকেট প্রসেসিং ও daily limit বাইপাস ঠেকানোর জন্য
@@ -241,76 +248,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user = await get_user(user_id)
-    text = update.message.text.strip()
-    selected = context.user_data.get("selected_range")
-    max_per_order = await get_max_per_order()
-
-    try:
-        quantity = int(text)
-    except ValueError:
-        await update.message.reply_text("❌ সংখ্যা লিখুন। উদাহরণ: 10")
-        return
-
-    if quantity < 1 or quantity > max_per_order:
-        await update.message.reply_text(f"❌ ১ থেকে {max_per_order} এর মধ্যে সংখ্যা দিন।")
-        return
-
-    remaining = user["daily_limit"] - user["daily_used"]
-    if quantity > remaining:
-        await update.message.reply_text(
-            f"❌ আজকের মাত্র *{remaining}টি* নম্বর নেওয়ার সুযোগ আছে।",
-            parse_mode="Markdown",
-        )
-        return
-
-    context.user_data.clear()
-    await update.message.reply_text("⏳ Queue-তে আছেন, একটু অপেক্ষা করুন...")
-
-    try:
-        async with _allocation_lock:
-            result = await asyncio.wait_for(
-                lamix.allocate_numbers_async(user["client_id"], selected["id"], quantity),
-                timeout=120
-            )
-    except asyncio.TimeoutError:
-        await update.message.reply_text("⏰ অনেকক্ষণ queue-তে ছিলেন, আবার চেষ্টা করুন।")
-        return
-
-    if not result or result.get("status") != "success":
-        keyboard = [[InlineKeyboardButton("📩 Request Range", callback_data=f"request_range_{selected['name']}")]]
-        await update.message.reply_text(
-            f"❌ *Allocation Failed!*\n\n📦 Range: *{selected['name']}*\n"
-            f"🔢 Quantity: *{quantity}*\n\n⚠️ No numbers available",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-        return
-
-    numbers = result.get("numbers", [])
-    await update_usage(user_id, len(numbers))
-    updated_user = await get_user(user_id)
-
-    shortfall_note = ""
-    if len(numbers) < quantity:
-        shortfall_note = f"\n⚠️ চাওয়া হয়েছিল *{quantity}*, পাওয়া গেছে *{len(numbers)}*"
-
-    await update.message.reply_text(
-        f"✅ *Order Created Successfully*\n\n"
-        f"📦 Range: *{selected['name']}*\n"
-        f"🔢 Quantity: *{len(numbers)}*\n"
-        f"💳 Payterm: *{selected.get('payterm', 'Weekly')}*\n"
-        f"💰 Payout: *${selected.get('payout', '0.01')}*"
-        f"{shortfall_note}\n\n"
-        f"📊 {updated_user['daily_used']}/{updated_user['daily_limit']} used today",
-        parse_mode="Markdown",
-    )
-
-    country_code = selected.get("country_code", "")
-    numbers = _post_process_numbers(numbers, country_code)
-
-async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
 
     # ✅ একই ইউজার ডাবল-ট্যাপ/দুই ডিভাইস থেকে একসাথে সাবমিট করলে এখানে আটকে যাবে
     if user_id in _users_submitting:
@@ -346,9 +283,10 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("⏳ Queue-তে আছেন, একটু অপেক্ষা করুন...")
 
         try:
-            async with _allocation_lock:
-                # ✅ queue-তে অপেক্ষার সময় usage বদলে যেতে পারে — lock পাওয়ার পর
-                # আরেকবার তাজা ডেটা দিয়ে remaining যাচাই
+            range_lock = await _get_range_lock(selected["id"])
+            async with range_lock:
+                # ✅ lock পাওয়ার পর fresh data দিয়ে আবার check — 
+                # অপেক্ষার সময় অন্য কেউ limit নিয়ে ফেলতে পারে
                 fresh_user = await get_user(user_id)
                 fresh_remaining = fresh_user["daily_limit"] - fresh_user["daily_used"]
                 if quantity > fresh_remaining:
