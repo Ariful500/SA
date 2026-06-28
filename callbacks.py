@@ -3,6 +3,9 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
+# ✅ Allocation Queue Lock
+_allocation_lock = asyncio.Lock()
+
 from config import ADMIN_ID
 from database import (
     get_user, unlink_user, update_usage, reset_user_usage,
