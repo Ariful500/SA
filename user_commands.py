@@ -110,7 +110,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "❌ /unlink — অ্যাকাউন্ট ডিসকানেক্ট\n"
         "👤 /account — অ্যাকাউন্ট তথ্য\n"
         "➕ /add\\_nums — রেঞ্জ ব্রাউজ করুন\n\n"
-        "🔍 যেকোনো টেক্সট পাঠিয়ে রেঞ্জ সার্চ করুন।",
+        "🔍 যেকোনো টেক্সট পাঠিয়ে রেঞ্জ সার্চ করুন।\n\n"
+        "🛠️ Developer [Shakil Islam](https://t.me/Shakil_Is)",
         parse_mode="MarkdownV2",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
