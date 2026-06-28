@@ -44,7 +44,7 @@ jobs:
       - name: Restore users.json
         run: |
           if [ ! -f users.json ]; then
-            echo "{}" > users.json
+            echo '{}' > users.json
             echo "users.json নতুন তৈরি হয়েছে।"
           else
             echo "✅ আগের users.json পাওয়া গেছে!"
@@ -53,10 +53,46 @@ jobs:
       - name: Restore seen_sms.json
         run: |
           if [ ! -f seen_sms.json ]; then
-            echo "[]" > seen_sms.json
+            echo '{"seen": [], "counts": {}}' > seen_sms.json
             echo "seen_sms.json নতুন তৈরি হয়েছে।"
           else
             echo "✅ আগের seen_sms.json পাওয়া গেছে!"
+          fi
+
+      - name: Restore settings.json
+        run: |
+          if [ ! -f settings.json ]; then
+            echo '{"daily_limit": 120, "max_per_order": 30, "auto_approve": false}' > settings.json
+            echo "settings.json নতুন তৈরি হয়েছে।"
+          else
+            echo "✅ আগের settings.json পাওয়া গেছে!"
+          fi
+
+      - name: Restore leaderboard_sms.json
+        run: |
+          if [ ! -f leaderboard_sms.json ]; then
+            echo '{"date": "", "counts": {}}' > leaderboard_sms.json
+            echo "leaderboard_sms.json নতুন তৈরি হয়েছে।"
+          else
+            echo "✅ আগের leaderboard_sms.json পাওয়া গেছে!"
+          fi
+
+      - name: Restore alltime_leaderboard.json
+        run: |
+          if [ ! -f alltime_leaderboard.json ]; then
+            echo '{"counts": {}}' > alltime_leaderboard.json
+            echo "alltime_leaderboard.json নতুন তৈরি হয়েছে।"
+          else
+            echo "✅ আগের alltime_leaderboard.json পাওয়া গেছে!"
+          fi
+
+      - name: Restore last_reset.json
+        run: |
+          if [ ! -f last_reset.json ]; then
+            echo '{"date": ""}' > last_reset.json
+            echo "last_reset.json নতুন তৈরি হয়েছে।"
+          else
+            echo "✅ আগের last_reset.json পাওয়া গেছে!"
           fi
 
       - name: Run python bot.py
