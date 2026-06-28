@@ -464,8 +464,8 @@ def update_client_payment(lamix_username: str, payment_type: str, value: str) ->
             headers={
                 "Referer": f"{LAMIX_URL}/ints/agent/Clients",
                 "Origin": LAMIX_URL,
-                "X-Requested-With": None,
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "*/*",
             },
             timeout=15,
         )
