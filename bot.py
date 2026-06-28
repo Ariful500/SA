@@ -43,6 +43,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SHUTDOWN_AFTER_SECONDS = 5 * 3600 + 59 * 60  # 5h 59m
+GRACEFUL_WAIT_SECONDS = 30  # চলমান কাজ শেষ করার সময়
+
+# Global shutdown flag
+_shutdown_mode = False
+
+def is_shutdown_mode() -> bool:
+    return _shutdown_mode
 
 
 # ══════════════════════════════════════════════
@@ -335,21 +342,41 @@ async def auto_reset_limits(app: Application):
 
 
 async def auto_shutdown(app: Application):
+    global _shutdown_mode
+    
     await asyncio.sleep(SHUTDOWN_AFTER_SECONDS)
-    logger.info("⏰ ৫ ঘণ্টা ৫৯ মিনিট পার হয়েছে — বট গ্রেসফুলি বন্ধ হচ্ছে...")
+    
+    # ── Shutdown Mode চালু ──
+    _shutdown_mode = True
+    logger.info("🔴 Shutdown Mode চালু — নতুন কমান্ড বন্ধ করা হয়েছে")
+    
     try:
         await app.bot.send_message(
             chat_id=ADMIN_ID,
             text=(
-                "⏰ ৫ ঘণ্টা ৫৯ মিনিট পার হয়ে গেছে।\n"
-                "GitHub Actions এর ৬ ঘণ্টা লিমিট এড়াতে বট এখন নিজেই বন্ধ হচ্ছে "
-                "(Job স্ট্যাটাস: ✅ Success)।"
+                "⏰ *Shutdown Mode চালু!*\n\n"
+                "🔴 নতুন কমান্ড বন্ধ করা হয়েছে\n"
+                f"⏳ {GRACEFUL_WAIT_SECONDS} সেকেন্ড পরে বট বন্ধ হবে\n\n"
+                "চলমান কাজগুলো শেষ হচ্ছে..."
             ),
+            parse_mode="Markdown",
         )
     except Exception as e:
         logger.warning(f"শাটডাউন নোটিস পাঠানো যায়নি: {e}")
+    
+    # ── চলমান কাজ শেষ হওয়ার জন্য অপেক্ষা ──
+    await asyncio.sleep(GRACEFUL_WAIT_SECONDS)
+    
+    logger.info("✅ বট গ্রেসফুলি বন্ধ হচ্ছে...")
+    try:
+        await app.bot.send_message(
+            chat_id=ADMIN_ID,
+            text="✅ বট বন্ধ হচ্ছে। নতুন workflow শুরু হবে।",
+        )
+    except Exception:
+        pass
+    
     app.stop_running()
-
 
 # ══════════════════════════════════════════════
 #  BOT COMMANDS MENU
