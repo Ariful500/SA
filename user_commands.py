@@ -160,7 +160,17 @@ async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ তথ্য লোড হচ্ছে...")
     from database import sync_total_allocated
     total = await sync_total_allocated(update.effective_user.id, user["username"])
-    
+
+    # ✅ Payment info fetch করো
+    client_info = await lamix.get_client_full_info_async(user["username"])
+    payment = lamix.parse_payment_info(client_info)
+
+    if payment:
+        labels = {"binance": "🟡 Binance UID", "bkash": "📱 Bkash", "nagad": "📱 Nagad"}
+        payment_text = f"\n💳 *Payment Method*\n• {labels[payment['method']]}: `{payment['value']}`\n"
+    else:
+        payment_text = "\n💳 *Payment Method*\n• ❌ কোনো পেমেন্ট মেথড সেট করা নেই\n"
+
     keyboard = [
         [InlineKeyboardButton("💳 Payment", callback_data="payment_menu")],
         [InlineKeyboardButton("❌ Unlink Account", callback_data="confirm_unlink")],
@@ -171,7 +181,8 @@ async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🧑 Username: *{user['username']}*\n\n"
         f"📊 *Today's Usage*\n"
         f"• 🔢 Used: *{user['daily_used']}/{user['daily_limit']}*\n"
-        f"• 🔄 Total Allocated: *{total}*",
+        f"• 🔄 Total Allocated: *{total}*\n"
+        f"{payment_text}",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
