@@ -349,6 +349,138 @@ PAYTERM_MAP = {
     "monthly45": "8", "monthly60": "9",
 }
 
+# ══════════════════════════════════════════════
+#  CLIENT PAYMENT INFO UPDATE (Binance/Bkash/Nagad)
+# ══════════════════════════════════════════════
+
+def get_client_full_info(lamix_username: str) -> dict | None:
+    """data_clients.php থেকে client-এর সব বর্তমান ফিল্ড নিয়ে আসে।"""
+    s = _get_session()
+    if not s:
+        return None
+    try:
+        params = {
+            "sEcho": "1", "iColumns": "8",
+            "sColumns": "%2C%2C%2C%2C%2C%2C%2C",
+            "iDisplayStart": "0", "iDisplayLength": "1000",
+            "sSearch": "", "bRegex": "false",
+            "iSortCol_0": "0", "sSortDir_0": "asc", "iSortingCols": "1",
+            "_": str(int(time.time() * 1000)),
+        }
+        for i in range(8):
+            params[f"mDataProp_{i}"] = str(i)
+            params[f"sSearch_{i}"] = ""
+            params[f"bRegex_{i}"] = "false"
+            params[f"bSearchable_{i}"] = "true"
+            params[f"bSortable_{i}"] = "false" if i in (0, 7) else "true"
+
+        resp = s.get(
+            f"{LAMIX_URL}/ints/agent/res/data_clients.php",
+            params=params,
+            headers={"Referer": f"{LAMIX_URL}/ints/agent/Clients"},
+            timeout=15,
+        )
+
+        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
+            s = _reset_session()
+            if not s:
+                return None
+            resp = s.get(
+                f"{LAMIX_URL}/ints/agent/res/data_clients.php",
+                params=params,
+                headers={"Referer": f"{LAMIX_URL}/ints/agent/Clients"},
+                timeout=15,
+            )
+
+        rows = resp.json().get("aaData", [])
+
+        for row in rows:
+            row_username = str(row[1]).strip()
+            if row_username.lower() == lamix_username.lower():
+                inp = BeautifulSoup(str(row[0]), "html.parser").find("input")
+                client_id = inp["value"] if inp else ""
+                return {
+                    "id": client_id,
+                    "username": row_username,
+                    "name": str(row[2]).strip() if row[2] else "",
+                    "email": str(row[3]).strip() if row[3] else "",
+                    "contact": str(row[4]).strip() if row[4] else "",
+                    "skype": str(row[5]).strip() if row[5] else "",
+                }
+        return None
+
+    except Exception as e:
+        print(f"[ClientInfo] Error: {e}")
+        return None
+
+
+def update_client_payment(lamix_username: str, payment_type: str, value: str) -> bool:
+    """
+    Client-এর payment তথ্য আপডেট করে।
+    payment_type: 'binance' | 'bkash' | 'nagad'
+    value: UID (binance) বা নাম্বার (bkash/nagad)
+    """
+    s = _get_session()
+    if not s:
+        return False
+
+    info = get_client_full_info(lamix_username)
+    if not info or not info.get("id"):
+        print(f"[PaymentUpdate] Client not found: {lamix_username}")
+        return False
+
+    skype_val = info["skype"]
+    contact_val = info["contact"]
+
+    if payment_type == "binance":
+        skype_val = value
+    elif payment_type == "bkash":
+        contact_val = f"Bkash {value}"
+    elif payment_type == "nagad":
+        contact_val = f"Nagad {value}"
+    else:
+        print(f"[PaymentUpdate] Unknown payment_type: {payment_type}")
+        return False
+
+    try:
+        data = {
+            "action": "update",
+            "id": info["id"],
+            "username": info["username"],
+            "password": "",
+            "email": info["email"],
+            "skype": skype_val,
+            "contact": contact_val,
+            "name": info["name"],
+            "cname": "",
+            "address": "",
+            "country": "Afghanistan",
+            "active": "1",
+        }
+        resp = s.post(
+            f"{LAMIX_URL}/ints/agent/res/editclient.php",
+            data=data,
+            headers={
+                "Referer": f"{LAMIX_URL}/ints/agent/Clients",
+                "Origin": LAMIX_URL,
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            timeout=15,
+        )
+        print(f"[PaymentUpdate] {lamix_username} -> {payment_type}: {resp.status_code}")
+        return resp.status_code == 200
+
+    except Exception as e:
+        print(f"[PaymentUpdate] Error: {e}")
+        return False
+
+
+async def get_client_full_info_async(lamix_username: str) -> dict | None:
+    return await asyncio.to_thread(get_client_full_info, lamix_username)
+
+
+async def update_client_payment_async(lamix_username: str, payment_type: str, value: str) -> bool:
+    return await asyncio.to_thread(update_client_payment, lamix_username, payment_type, value)
 
 def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | None:
     s = _get_session()
