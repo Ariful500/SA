@@ -362,6 +362,28 @@ async def sms_monitor_loop(app: Application):
                 _save_leaderboard()
                 _save_alltime_leaderboard()
 
+            # ✅ Available 0 হলে admin notify (একবারই)
+            try:
+                ranges = await lamix.fetch_ranges_async()
+                for r in ranges:
+                    name = r["name"]
+                    if r["available"] == 0 and name not in _notified_empty_ranges:
+                        _notified_empty_ranges.add(name)
+                        await app.bot.send_message(
+                            chat_id=ADMIN_ID,
+                            text=(
+                                f"⚠️ *Range এ নম্বর শেষ!*\n\n"
+                                f"📦 Range: *{name}*\n"
+                                f"📊 Total: {r['total']} | Available: *0*\n\n"
+                                f"নতুন নম্বর যোগ করুন।"
+                            ),
+                            parse_mode="Markdown",
+                        )
+                    elif r["available"] > 0 and name in _notified_empty_ranges:
+                        _notified_empty_ranges.discard(name)  # নতুন নম্বর আসলে reset
+            except Exception as e:
+                logger.error(f"[RangeCheck] Error: {e}")
+
         except Exception as e:
             logger.error(f"[SMS Monitor] Loop error: {e}")
 
