@@ -163,11 +163,28 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         with open("leaderboard_sms.json", "r") as f:
             _leaderboard_counts = {
                 k: v for k, v in json.load(f).get("counts", {}).items()
+async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import datetime
+    import json
+    import subprocess
+
+    # GitHub থেকে latest JSON pull করো
+    try:
+        subprocess.run(["git", "pull", "origin", "main"], check=False, capture_output=True)
+    except Exception:
+        pass
+
+    # leaderboard_sms.json পড়া
+    try:
+        with open("leaderboard_sms.json", "r") as f:
+            _leaderboard_counts = {
+                k: v for k, v in json.load(f).get("counts", {}).items()
                 if k and k.lower() != "none"
             }
     except Exception:
         _leaderboard_counts = {}
 
+    # alltime_leaderboard.json পড়া
     try:
         with open("alltime_leaderboard.json", "r") as f:
             _alltime_counts = {
@@ -198,6 +215,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         today_lines.append("<b>আজকে এখনো কোনো SMS আসেনি।</b>")
 
+    # ── All Time ──
     alltime_lines = ["<b>🌟 All Time Leaderboard 🌟</b>", ""]
     if _alltime_counts:
         sorted_alltime = sorted(_alltime_counts.items(), key=lambda x: x[1], reverse=True)
