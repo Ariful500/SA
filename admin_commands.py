@@ -74,15 +74,58 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     # সরাসরি JSON থেকে পড়া
     try:
         with open("leaderboard_sms.json", "r") as f:
-            _leaderboard_counts = json.load(f).get("counts", {})
+            _leaderboard_counts = {
+                k: v for k, v in json.load(f).get("counts", {}).items()
+                if k and k.lower() != "none"
+            }
     except Exception:
         _leaderboard_counts = {}
 
     try:
         with open("alltime_leaderboard.json", "r") as f:
-            _alltime_counts = json.load(f).get("counts", {})
+            _alltime_counts = {
+                k: v for k, v in json.load(f).get("counts", {}).items()
+                if k and k.lower() != "none"
+            }
     except Exception:
         _alltime_counts = {}
+
+    bd_time = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+    now_str = bd_time.strftime("%I:%M %p")
+    date_str = bd_time.strftime("%d %B %Y")
+
+    medals = ["🥇", "🥈", "🥉"]
+
+    # ── Today ──
+    today_text = "🏆 *Today SMS Leaderboard* 🏆\n\n"
+    if _leaderboard_counts:
+        sorted_today = sorted(_leaderboard_counts.items(), key=lambda x: x[1], reverse=True)
+        for i, (client, count) in enumerate(sorted_today[:20]):
+            masked = client[:-3] + "×××" if len(client) > 3 else "×××"
+            prefix = medals[i] if i < 3 else f"{i+1}\\."
+            today_text += f"{prefix} {masked} — *{count}*\n"
+    else:
+        today_text += "আজকে এখনো কোনো SMS আসেনি।"
+
+    # ── All Time ──
+    alltime_text = "🌟 *All Time Leaderboard* 🌟\n\n"
+    if _alltime_counts:
+        sorted_alltime = sorted(_alltime_counts.items(), key=lambda x: x[1], reverse=True)
+        for i, (client, count) in enumerate(sorted_alltime[:20]):
+            masked = client[:-3] + "×××" if len(client) > 3 else "×××"
+            prefix = medals[i] if i < 3 else f"{i+1}\\."
+            alltime_text += f"{prefix} {masked} — *{count:,}*\n"
+    else:
+        alltime_text += "এখনো কোনো data নেই।"
+
+    text = (
+        f"{today_text}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{alltime_text}\n\n"
+        f"⏰ {now_str} | {date_str}"
+    )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
 
     bd_time = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
     now_str = bd_time.strftime("%I:%M %p")
