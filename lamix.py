@@ -460,15 +460,18 @@ def update_client_payment(lamix_username: str, payment_type: str, value: str) ->
             "active": "1",
         }
         resp = s.post(
-            f"{LAMIX_URL}/ints/agent/res/editclient.php",
+            f"{LAMIX_URL}/ints/agent/Clients",
             data=data,
             headers={
                 "Referer": f"{LAMIX_URL}/ints/agent/Clients",
                 "Origin": LAMIX_URL,
-                "X-Requested-With": "XMLHttpRequest",
-                "Accept": "*/*",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Upgrade-Insecure-Requests": "1",
+                "X-Requested-With": None,
             },
             timeout=15,
+            allow_redirects=True,
         )
         print(f"[PaymentUpdate] {lamix_username} -> {payment_type}")
         print(f"[PaymentUpdate] Sent data: {data}")
