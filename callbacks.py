@@ -280,12 +280,20 @@ async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_T
         )
         # ✅ Admin notify — range শেষ
         try:
-            tg_uname = f"@{update.effective_user.username}" if update.effective_user.username else str(update.effective_user.id)
+            raw_uname = update.effective_user.username
+            if raw_uname:
+                safe_uname = re.sub(r'([_*`\[])', r'\\\1', raw_uname)
+                tg_uname = f"@{safe_uname}"
+            else:
+                tg_uname = str(update.effective_user.id)
+
+            safe_range_name = re.sub(r'([_*`\[])', r'\\\1', selected['name'])
+
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=(
                     f"⚠️ *Range শেষ হয়ে গেছে!*\n\n"
-                    f"📦 Range: *{selected['name']}*\n"
+                    f"📦 Range: *{safe_range_name}*\n"
                     f"👤 User: {tg_uname}\n"
                     f"🔢 চেয়েছিল: *{quantity}টি* নম্বর\n\n"
                     f"এই range এ আর কোনো নম্বর নেই।"
@@ -764,13 +772,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Request Range (User) ──
     if data.startswith("request_range_"):
         range_name = data[len("request_range_"):]
-        tg_uname = f"@{update.effective_user.username}" if update.effective_user.username else str(user_id)
+        safe_range_name = re.sub(r'([_*`\[])', r'\\\1', range_name)
+
+        raw_uname = update.effective_user.username
+        if raw_uname:
+            safe_uname = re.sub(r'([_*`\[])', r'\\\1', raw_uname)
+            tg_uname = f"@{safe_uname}"
+        else:
+            tg_uname = str(user_id)
+
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=(
                     f"📩 *Range Request!*\n\n"
-                    f"📦 Range: *{range_name}*\n"
+                    f"📦 Range: *{safe_range_name}*\n"
                     f"👤 User: {tg_uname}\n"
                     f"🆔 `{user_id}`\n\n"
                     f"এই range এ নতুন নম্বর যোগ করুন।"
@@ -779,7 +795,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             await query.edit_message_text(
                 f"✅ *Request পাঠানো হয়েছে!*\n\n"
-                f"📦 Range: *{range_name}*\n\n"
+                f"📦 Range: *{safe_range_name}*\n\n"
                 f"এডমিন নতুন নম্বর যোগ করলে আবার চেষ্টা করুন।",
                 parse_mode="Markdown",
             )
