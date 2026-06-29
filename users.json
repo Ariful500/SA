@@ -63,10 +63,10 @@
   },
   "6795152041": {
     "user_id": 6795152041,
-    "username": "SA_KAWSAR82",
+    "username": null,
     "telegram_username": "VauMusk",
-    "client_id": "161184",
-    "is_linked": true,
+    "client_id": null,
+    "is_linked": false,
     "daily_used": 0,
     "daily_limit": 120,
     "total_allocated": 20,
