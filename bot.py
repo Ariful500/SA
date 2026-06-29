@@ -333,15 +333,16 @@ async def sms_monitor_loop(app: Application):
                         await asyncio.sleep(1)
 
                 except Exception as e:
-    err_str = str(e)
-    if "Flood control exceeded" in err_str or "429" in err_str:
-        import re
-        match = re.search(r'Retry in (\d+) seconds', err_str)
-        wait = int(match.group(1)) + 1 if match else 30
-        logger.warning(f"[SMS Monitor] Flood control, {wait}s অপেক্ষা...")
-        await asyncio.sleep(wait)
-    else:
-        logger.error(f"[SMS Monitor] Send error: {e}")
+                    err_str = str(e)
+                    if "Flood control exceeded" in err_str or "429" in err_str:
+                        import re
+                        match = re.search(r'Retry in (\d+) seconds', err_str)
+                        wait = int(match.group(1)) + 1 if match else 30
+                        logger.warning(f"[SMS Monitor] Flood control, {wait}s অপেক্ষা...")
+                        await asyncio.sleep(wait)
+                    else:
+                        logger.error(f"[SMS Monitor] Send error: {e}")
+
             if new_rows:
                 _save_seen_sms()
                 _save_leaderboard()
