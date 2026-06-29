@@ -148,7 +148,7 @@ async def _msg_sender_loop(app: Application):
                 _msg_queue.put((chat_id, text))
                 await asyncio.sleep(5)
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(4)
 
         except queue.Empty:
             await asyncio.sleep(0.1)
