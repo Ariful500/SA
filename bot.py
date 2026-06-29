@@ -486,25 +486,40 @@ async def post_init(app: Application):
     _load_seen_sms()
     _load_leaderboard()
     _load_alltime_leaderboard()
+
+    # আগে login করো — retry সহ
+    session = None
+    for attempt in range(1, 6):
+        session = await asyncio.to_thread(lamix._do_login)
+        if session:
+            logger.info("Lamix Login OK")
+            await app.bot.send_message(chat_id=ADMIN_ID, text="✅ Bot চালু! Lamix Login সফল।")
+            break
+        else:
+            logger.warning(f"Lamix Login Failed (attempt {attempt}/5)")
+            if attempt < 5:
+                await app.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"⚠️ Lamix Login ব্যর্থ! ({attempt}/5)\n⏳ ১০ সেকেন্ড পর আবার চেষ্টা করছে...",
+                )
+                await asyncio.sleep(10)
+            else:
+                await app.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text="❌ Lamix Login ৫ বার ব্যর্থ! Manual চেক করুন।",
+                )
+                return
+
+    # login এর পরে startup check
     await _startup_reset_check(app)
+
     await app.bot.set_my_commands(_USER_CMDS)
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
     await app.bot.set_my_commands(_GROUP_CMDS, scope=BotCommandScopeAllGroupChats())
 
-    session = await asyncio.to_thread(lamix._do_login)
-    if session:
-        logger.info("Lamix Login OK")
-        await app.bot.send_message(chat_id=ADMIN_ID, text="Bot চালু! Lamix Login সফল।")
-    else:
-        logger.error("Lamix Login Failed")
-        await app.bot.send_message(chat_id=ADMIN_ID, text="Lamix Login ব্যর্থ! Username/Password চেক করুন।")
-
-    logger.info("DB & Commands initialized")
-
     asyncio.create_task(auto_shutdown(app))
     asyncio.create_task(sms_monitor_loop(app))
     logger.info("⏳ Auto-shutdown ও SMS Monitor চালু হয়েছে।")
-
 
 # ══════════════════════════════════════════════
 #  MAIN
