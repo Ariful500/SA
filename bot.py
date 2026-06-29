@@ -42,7 +42,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SHUTDOWN_AFTER_SECONDS = 5 * 3600 + 59 * 60  # 5h 59m
+SHUTDOWN_AFTER_SECONDS = 5 * 3600 + 58 * 60 + 50  # 5h 58m 50s
 GRACEFUL_WAIT_SECONDS = 30  # চলমান কাজ শেষ করার সময়
 
 # Global shutdown flag
@@ -541,8 +541,7 @@ def main():
 
     # Scheduler
     scheduler = AsyncIOScheduler()
-scheduler.start()
-
+    scheduler.start()
     logger.info("🚀 SA SMS WORK Bot চালু হয়েছে!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
     logger.info("✅ বট গ্রেসফুলি বন্ধ হয়েছে (exit code 0)।")
