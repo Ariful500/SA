@@ -43,6 +43,75 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ══════════════════════════════════════════════
+#  CENTRAL GIT QUEUE — সব push এখান থেকে
+# ══════════════════════════════════════════════
+import queue
+
+_git_queue: queue.Queue = queue.Queue()
+_git_worker_started = False
+
+
+def _git_worker():
+    """একটাই thread সব git push সিরিয়ালি করে — কোনো conflict নেই"""
+    while True:
+        try:
+            files_and_msg = _git_queue.get(timeout=5)
+            if files_and_msg is None:
+                break
+
+            files, message = files_and_msg
+
+            subprocess.run(["git", "config", "user.name", "github-actions[bot]"],
+                           check=False, capture_output=True)
+            subprocess.run(["git", "config", "user.email",
+                            "github-actions[bot]@users.noreply.github.com"],
+                           check=False, capture_output=True)
+            subprocess.run(["git", "pull", "origin", "main", "--rebase"],
+                           check=False, capture_output=True)
+
+            for f in files:
+                subprocess.run(["git", "add", f], check=False, capture_output=True)
+
+            result = subprocess.run(["git", "diff", "--staged", "--quiet"],
+                                    capture_output=True)
+            if result.returncode != 0:
+                subprocess.run(["git", "commit", "-m", message],
+                               check=False, capture_output=True)
+                r = subprocess.run(["git", "push", "origin", "main"],
+                                   check=False, capture_output=True)
+                if r.returncode == 0:
+                    logger.info(f"[GitQueue] ✅ Pushed: {message}")
+                else:
+                    logger.error(f"[GitQueue] ❌ Push failed: {r.stderr.decode()}")
+            else:
+                logger.info(f"[GitQueue] No changes: {message}")
+
+        except queue.Empty:
+            continue
+        except Exception as e:
+            logger.error(f"[GitQueue] Error: {e}")
+        finally:
+            try:
+                _git_queue.task_done()
+            except Exception:
+                pass
+
+
+def _start_git_worker():
+    global _git_worker_started
+    if not _git_worker_started:
+        t = threading.Thread(target=_git_worker, daemon=False, name="GitWorker")
+        t.start()
+        _git_worker_started = True
+        logger.info("✅ Git Worker thread চালু হয়েছে")
+
+
+def git_push_async(files: list, message: str):
+    """যেকোনো জায়গা থেকে এটা call করুন — queue তে যাবে, worker push করবে"""
+    _start_git_worker()
+    _git_queue.put((files, message))
+
 SHUTDOWN_AFTER_SECONDS = 5 * 3600 + 58 * 60 + 50  # 5h 58m 50s
 GRACEFUL_WAIT_SECONDS = 30  # চলমান কাজ শেষ করার সময়
 
@@ -113,12 +182,7 @@ def _save_leaderboard():
         today_str = now_bd.strftime("%Y-%m-%d")
         with open(LEADERBOARD_FILE, "w") as f:
             json.dump({"date": today_str, "counts": _leaderboard_counts}, f)
-        # git background এ
-        threading.Thread(target=lambda: [
-            subprocess.run(["git", "add", LEADERBOARD_FILE], check=False),
-            subprocess.run(["git", "commit", "-m", "📊 Leaderboard updated"], check=False),
-            subprocess.run(["git", "push", "origin", "main"], check=False),
-        ], daemon=True).start()
+        git_push_async([LEADERBOARD_FILE], "📊 Leaderboard updated")
     except Exception as e:
         logger.error(f"[Leaderboard] Save error: {e}")
 
@@ -127,12 +191,7 @@ def _save_alltime_leaderboard():
     try:
         with open(ALLTIME_LEADERBOARD_FILE, "w") as f:
             json.dump({"counts": _alltime_counts}, f)
-        logger.info(f"✅ AllTime Leaderboard saved: {len(_alltime_counts)} clients")
-        threading.Thread(target=lambda: [
-            subprocess.run(["git", "add", ALLTIME_LEADERBOARD_FILE], check=False),
-            subprocess.run(["git", "commit", "-m", "🌟 All Time Leaderboard updated"], check=False),
-            subprocess.run(["git", "push", "origin", "main"], check=False),
-        ], daemon=True).start()
+        git_push_async([ALLTIME_LEADERBOARD_FILE], "🌟 All Time Leaderboard updated")
     except Exception as e:
         logger.error(f"[AllTime] Save error: {e}")
 
@@ -187,11 +246,7 @@ def _save_seen_sms():
     try:
         with open(SEEN_SMS_FILE, "w") as f:
             json.dump({"seen": list(_seen_sms), "counts": _number_sms_count}, f)
-        subprocess.run(["git", "add", SEEN_SMS_FILE], check=False)
-        result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
-        if result.returncode != 0:
-            subprocess.run(["git", "commit", "-m", "💾 SMS seen list updated"], check=False)
-            subprocess.run(["git", "push", "origin", "main"], check=False)
+        git_push_async([SEEN_SMS_FILE], "💾 SMS seen list updated")
     except Exception as e:
         logger.error(f"[SeenSMS] Save error: {e}")
 
