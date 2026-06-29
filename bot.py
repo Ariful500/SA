@@ -399,33 +399,33 @@ async def sms_monitor_loop(app: Application):
                         logger.error(f"[SMS Monitor] Send error: {e}")
 
             if new_rows:
-    # ফাইলগুলো locally save করো
-    try:
-        with open(SEEN_SMS_FILE, "w") as f:
-            json.dump({"seen": list(_seen_sms), "counts": _number_sms_count}, f)
-    except Exception as e:
-        logger.error(f"[SeenSMS] Save error: {e}")
+                # ফাইলগুলো locally save করো
+                try:
+                    with open(SEEN_SMS_FILE, "w") as f:
+                        json.dump({"seen": list(_seen_sms), "counts": _number_sms_count}, f)
+                except Exception as e:
+                    logger.error(f"[SeenSMS] Save error: {e}")
 
-    try:
-        import datetime as _dt
-        now_bd = _dt.datetime.utcnow() + _dt.timedelta(hours=6)
-        with open(LEADERBOARD_FILE, "w") as f:
-            json.dump({"date": now_bd.strftime("%Y-%m-%d"),
-                       "counts": _leaderboard_counts}, f)
-    except Exception as e:
-        logger.error(f"[Leaderboard] Save error: {e}")
+                try:
+                    import datetime as _dt
+                    now_bd = _dt.datetime.utcnow() + _dt.timedelta(hours=6)
+                    with open(LEADERBOARD_FILE, "w") as f:
+                        json.dump({"date": now_bd.strftime("%Y-%m-%d"),
+                                   "counts": _leaderboard_counts}, f)
+                except Exception as e:
+                    logger.error(f"[Leaderboard] Save error: {e}")
 
-    try:
-        with open(ALLTIME_LEADERBOARD_FILE, "w") as f:
-            json.dump({"counts": _alltime_counts}, f)
-    except Exception as e:
-        logger.error(f"[AllTime] Save error: {e}")
+                try:
+                    with open(ALLTIME_LEADERBOARD_FILE, "w") as f:
+                        json.dump({"counts": _alltime_counts}, f)
+                except Exception as e:
+                    logger.error(f"[AllTime] Save error: {e}")
 
-    # তিনটা একসাথে একটাই push এ
-    git_push_async(
-        [SEEN_SMS_FILE, LEADERBOARD_FILE, ALLTIME_LEADERBOARD_FILE],
-        "💾 SMS + Leaderboard updated"
-    )
+                # তিনটা একসাথে একটাই push এ
+                git_push_async(
+                    [SEEN_SMS_FILE, LEADERBOARD_FILE, ALLTIME_LEADERBOARD_FILE],
+                    "💾 SMS + Leaderboard updated"
+                )
 
         except Exception as e:
             logger.error(f"[SMS Monitor] Loop error: {e}")
