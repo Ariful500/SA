@@ -119,15 +119,37 @@ _msg_queue: queue.Queue = queue.Queue()
 
 
 async def _msg_sender_loop(app: Application):
-    """প্রতি সেকেন্ডে ১টা করে message পাঠায়"""
+    """প্রতি মিনিটে সর্বোচ্চ ২০টা message পাঠায়"""
+    sent_this_minute = 0
+    minute_start = asyncio.get_event_loop().time()
+
     while True:
         try:
+            now = asyncio.get_event_loop().time()
+            if now - minute_start >= 60:
+                sent_this_minute = 0
+                minute_start = now
+
+            if sent_this_minute >= 20:
+                wait = 60 - (asyncio.get_event_loop().time() - minute_start)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                sent_this_minute = 0
+                minute_start = asyncio.get_event_loop().time()
+                continue
+
             chat_id, text = _msg_queue.get_nowait()
             try:
                 await app.bot.send_message(chat_id=chat_id, text=text)
+                sent_this_minute += 1
             except Exception as e:
                 logger.error(f"[MsgQueue] Send error: {e}")
+                # ✅ fail হলে queue তে ফেরত দাও
+                _msg_queue.put((chat_id, text))
+                await asyncio.sleep(5)
+
             await asyncio.sleep(1)
+
         except queue.Empty:
             await asyncio.sleep(0.1)
 
@@ -294,7 +316,7 @@ def _reset_seen_sms():
 
 async def sms_monitor_loop(app: Application):
     import datetime
-    global _seen_sms, _notified_empty_ranges
+    global _seen_sms, _notified_empty_ranges, _pending_msgs
 
     logger.info("📡 SMS Monitor চালু হয়েছে...")
     _range_check_counter = 0
@@ -413,7 +435,7 @@ async def sms_monitor_loop(app: Application):
 
             if _pending_msgs:
                 MAX_CHARS = 4000
-                SEP = "\n-----------------------------\n"
+                SEP = "\n\n-----------------------------\n\n"
 
                 if len(_pending_msgs) <= 2:
                     for msg in _pending_msgs:
