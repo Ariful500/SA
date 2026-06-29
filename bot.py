@@ -640,8 +640,8 @@ async def _startup_reset_check(app: Application):
 
 async def post_init(app: Application):
     await init_db()
-    # leaderboard reset _startup_reset_check এ হবে
-    # শুধু alltime load করো — এটা সব দিনের data
+    _load_seen_sms()       # ← যোগ করুন
+    _load_leaderboard()    # ← যোগ করুন
     _load_alltime_leaderboard()
 
     # Step 1: Login retry
