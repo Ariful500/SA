@@ -485,7 +485,6 @@ async def _startup_reset_check(app: Application):
 
 async def post_init(app: Application):
     await init_db()
-    _load_seen_sms()
     _load_leaderboard()
     _load_alltime_leaderboard()
 
@@ -515,14 +514,19 @@ async def post_init(app: Application):
     # Step 2: Startup reset (সকাল ৬টায় হলে)
     await _startup_reset_check(app)
 
-    # Step 3: ৫ সেকেন্ড অপেক্ষা তারপর SMS monitor শুরু
+    # Step 3: Commands set
     await app.bot.set_my_commands(_USER_CMDS)
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
     await app.bot.set_my_commands(_GROUP_CMDS, scope=BotCommandScopeAllGroupChats())
 
-    logger.info("⏳ ৫ সেকেন্ড অপেক্ষা করছে SMS Monitor শুরুর আগে...")
+    # Step 4: Reset হওয়ার পরে JSON থেকে seen_sms load করো
+    _load_seen_sms()
+    logger.info("✅ seen_sms.json লোড হয়েছে।")
+
+    # Step 5: ৫ সেকেন্ড অপেক্ষা
     await asyncio.sleep(5)
 
+    # Step 6: SMS Monitor শুরু
     asyncio.create_task(auto_shutdown(app))
     asyncio.create_task(sms_monitor_loop(app))
     logger.info("✅ Auto-shutdown ও SMS Monitor চালু হয়েছে।")
