@@ -70,13 +70,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     import json
     import subprocess
 
-    # GitHub থেকে latest JSON pull করো
-    try:
-        subprocess.run(["git", "pull", "origin", "main"], check=False, capture_output=True)
-    except Exception:
-        pass
-
-    # leaderboard_sms.json পড়া
+    # local disk থেকে পড়ো — সবসময় আপডেট থাকে
     try:
         with open("leaderboard_sms.json", "r") as f:
             _leaderboard_counts = {
@@ -86,7 +80,6 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception:
         _leaderboard_counts = {}
 
-    # alltime_leaderboard.json পড়া
     try:
         with open("alltime_leaderboard.json", "r") as f:
             _alltime_counts = {
