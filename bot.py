@@ -115,8 +115,7 @@ def git_push_async(files: list, message: str):
 # ══════════════════════════════════════════════
 #  TELEGRAM MESSAGE QUEUE — প্রতি সেকেন্ডে ১টা
 # ══════════════════════════════════════════════
-import queue as _queue
-_msg_queue: _queue.Queue = _queue.Queue()
+_msg_queue: queue.Queue = queue.Queue()
 
 
 async def _msg_sender_loop(app: Application):
