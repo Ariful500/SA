@@ -22,28 +22,26 @@ _git_lock = threading.Lock()
 # ══════════════════════════════════════════════
 
 def _git_commit_push(filepath: str, message: str):
-    """Git push আলাদা lock দিয়ে সিরিয়ালাইজড — DB lock এর বাইরে চলে,
-    তাই কারো ধীর push অন্য কারো read/write ব্লক করে না, আর দুইটা
-    push একসাথে চললে .git/index.lock কনফ্লিক্টও হবে না।"""
-    with _git_lock:
-        try:
-            subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
-            subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
-            subprocess.run(["git", "pull", "origin", "main", "--rebase"], check=False)
-            subprocess.run(["git", "add", filepath], check=False)
-            result = subprocess.run(
-                ["git", "diff", "--staged", "--quiet"],
-                capture_output=True
-            )
-            if result.returncode != 0:
-                subprocess.run(["git", "commit", "-m", message], check=False)
-                subprocess.run(["git", "push", "origin", "main"], check=False)
-                print(f"[Git] ✅ Saved: {message}")
-            else:
-                print("[Git] No changes to save.")
-        except Exception as e:
-            print(f"[Git] Save error: {e}")
-
+    """bot.py এর central git queue তে পাঠায় — সব push সিরিয়ালি হয়"""
+    try:
+        from bot import git_push_async
+        git_push_async([filepath], message)
+        print(f"[Git] ✅ Queued: {message}")
+    except ImportError:
+        # fallback — bot import না হলে সরাসরি push
+        with _git_lock:
+            try:
+                subprocess.run(["git", "pull", "origin", "main", "--rebase"],
+                               check=False, capture_output=True)
+                subprocess.run(["git", "add", filepath], check=False)
+                result = subprocess.run(["git", "diff", "--staged", "--quiet"],
+                                        capture_output=True)
+                if result.returncode != 0:
+                    subprocess.run(["git", "commit", "-m", message], check=False)
+                    subprocess.run(["git", "push", "origin", "main"], check=False)
+                    print(f"[Git] ✅ Saved (fallback): {message}")
+            except Exception as e:
+                print(f"[Git] Fallback error: {e}")
 
 # ══════════════════════════════════════════════
 #  HELPERS
