@@ -6,6 +6,7 @@ import asyncio
 import os
 import json
 import subprocess
+import threading
 from collections import Counter
 from telegram import Update, BotCommand, BotCommandScopeChat, BotCommandScopeAllGroupChats
 from telegram.ext import (
@@ -488,7 +489,7 @@ async def post_init(app: Application):
     _load_leaderboard()
     _load_alltime_leaderboard()
 
-    # আগে login করো — retry সহ
+    # Step 1: Login retry
     session = None
     for attempt in range(1, 6):
         session = await asyncio.to_thread(lamix._do_login)
@@ -511,16 +512,20 @@ async def post_init(app: Application):
                 )
                 return
 
-    # login এর পরে startup check
+    # Step 2: Startup reset (সকাল ৬টায় হলে)
     await _startup_reset_check(app)
 
+    # Step 3: ৫ সেকেন্ড অপেক্ষা তারপর SMS monitor শুরু
     await app.bot.set_my_commands(_USER_CMDS)
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
     await app.bot.set_my_commands(_GROUP_CMDS, scope=BotCommandScopeAllGroupChats())
 
+    logger.info("⏳ ৫ সেকেন্ড অপেক্ষা করছে SMS Monitor শুরুর আগে...")
+    await asyncio.sleep(5)
+
     asyncio.create_task(auto_shutdown(app))
     asyncio.create_task(sms_monitor_loop(app))
-    logger.info("⏳ Auto-shutdown ও SMS Monitor চালু হয়েছে।")
+    logger.info("✅ Auto-shutdown ও SMS Monitor চালু হয়েছে।")
 
 # ══════════════════════════════════════════════
 #  MAIN
