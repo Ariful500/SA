@@ -265,10 +265,11 @@ async def sms_monitor_loop(app: Application):
                     dt_bd = dt_utc + datetime.timedelta(hours=6)
                     time_str = dt_bd.strftime("%I:%M %p | %d.%m.%y")
 
-                    range_name = str(row[1])
-                    number     = str(row[2])
-                    cli        = str(row[3])
-                    sms_text   = str(row[5])
+                    range_name  = str(row[1])
+                    number      = str(row[2])
+                    cli         = str(row[3])
+                    client_name = str(row[4]).strip()
+                    sms_text    = str(row[5])
 
                     _number_sms_count[number] = _number_sms_count.get(number, 0) + 1
                     today_count = _number_sms_count[number]
