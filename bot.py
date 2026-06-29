@@ -130,7 +130,7 @@ async def _msg_sender_loop(app: Application):
                 sent_this_minute = 0
                 minute_start = now
 
-            if sent_this_minute >= 20:
+            if sent_this_minute >= 15:
                 wait = 60 - (asyncio.get_event_loop().time() - minute_start)
                 if wait > 0:
                     await asyncio.sleep(wait)
