@@ -127,7 +127,7 @@ def _save_alltime_leaderboard():
     try:
         with open(ALLTIME_LEADERBOARD_FILE, "w") as f:
             json.dump({"counts": _alltime_counts}, f)
-        # git background এ
+        logger.info(f"✅ AllTime Leaderboard saved: {len(_alltime_counts)} clients")
         threading.Thread(target=lambda: [
             subprocess.run(["git", "add", ALLTIME_LEADERBOARD_FILE], check=False),
             subprocess.run(["git", "commit", "-m", "🌟 All Time Leaderboard updated"], check=False),
