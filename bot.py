@@ -165,6 +165,7 @@ ALLTIME_LEADERBOARD_FILE = "alltime_leaderboard.json"
 _leaderboard_counts: dict[str, int] = {}
 _alltime_counts: dict[str, int] = {}
 _notified_empty_ranges: set[str] = set()
+_pending_msgs: list[str] = []
 
 def _load_leaderboard():
     global _leaderboard_counts
@@ -336,7 +337,7 @@ async def sms_monitor_loop(app: Application):
             if new_rows:
                 number_limits = await lamix.fetch_number_limits_async()
 
-            send_count = 0  # ✅ গ্রুপে পাঠানো message এর counter
+            all_msgs = []
 
             for i, row in enumerate(new_rows):
                 try:
@@ -370,8 +371,7 @@ async def sms_monitor_loop(app: Application):
                             f"━━━━━━━━━━━━━━━\n"
                             f"🕐 {time_str}"
                         )
-                        enqueue_message(GROUP_CHAT_ID, msg)
-                        send_count += 1
+                        all_msgs.append(msg)
 
                         if client_uname:
                             target_user = await get_user_by_lamix_username(client_uname)
@@ -403,19 +403,46 @@ async def sms_monitor_loop(app: Application):
                             f"━━━━━━━━━━━━━━━\n"
                             f"🕐 {time_str}"
                         )
-                        enqueue_message(GROUP_CHAT_ID, msg)
-                        send_count += 1
+                        all_msgs.append(msg)
 
                 except Exception as e:
-                    err_str = str(e)
-                    if "Flood control exceeded" in err_str or "429" in err_str:
-                        import re
-                        match = re.search(r'Retry in (\d+) seconds', err_str)
-                        wait = int(match.group(1)) + 1 if match else 30
-                        logger.warning(f"[SMS Monitor] Flood control, {wait}s অপেক্ষা...")
-                        await asyncio.sleep(wait)
-                    else:
-                        logger.error(f"[SMS Monitor] Send error: {e}")
+                    logger.error(f"[SMS Monitor] Row error: {e}")
+
+            # নতুন SMS গুলো pending buffer এ যোগ করো
+            _pending_msgs.extend(all_msgs)
+
+            if _pending_msgs:
+                MAX_CHARS = 4000
+                SEP = "\n-----------------------------\n"
+
+                if len(_pending_msgs) <= 2:
+                    for msg in _pending_msgs:
+                        enqueue_message(GROUP_CHAT_ID, msg)
+                    _pending_msgs.clear()
+                else:
+                    batch1 = ""
+                    batch2 = ""
+                    sent_count = 0
+
+                    for msg in _pending_msgs:
+                        candidate = (batch1 + SEP + msg) if batch1 else msg
+                        if len(candidate) <= MAX_CHARS and not batch2:
+                            batch1 = candidate
+                            sent_count += 1
+                        else:
+                            candidate2 = (batch2 + SEP + msg) if batch2 else msg
+                            if len(candidate2) <= MAX_CHARS:
+                                batch2 = candidate2
+                                sent_count += 1
+                            else:
+                                break
+
+                    if batch1:
+                        enqueue_message(GROUP_CHAT_ID, batch1)
+                    if batch2:
+                        enqueue_message(GROUP_CHAT_ID, batch2)
+
+                    del _pending_msgs[:sent_count]
 
             if new_rows:
                 # ফাইলগুলো locally save করো
