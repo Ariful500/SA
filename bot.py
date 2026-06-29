@@ -128,7 +128,7 @@ async def _msg_sender_loop(app: Application):
             except Exception as e:
                 logger.error(f"[MsgQueue] Send error: {e}")
             await asyncio.sleep(1)
-        except _queue.Empty:
+        except queue.Empty:
             await asyncio.sleep(0.1)
 
 
