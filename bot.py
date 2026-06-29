@@ -112,6 +112,31 @@ def git_push_async(files: list, message: str):
     _start_git_worker()
     _git_queue.put((files, message))
 
+# ══════════════════════════════════════════════
+#  TELEGRAM MESSAGE QUEUE — প্রতি সেকেন্ডে ১টা
+# ══════════════════════════════════════════════
+import queue as _queue
+_msg_queue: _queue.Queue = _queue.Queue()
+
+
+async def _msg_sender_loop(app: Application):
+    """প্রতি সেকেন্ডে ১টা করে message পাঠায়"""
+    while True:
+        try:
+            chat_id, text = _msg_queue.get_nowait()
+            try:
+                await app.bot.send_message(chat_id=chat_id, text=text)
+            except Exception as e:
+                logger.error(f"[MsgQueue] Send error: {e}")
+            await asyncio.sleep(1)
+        except _queue.Empty:
+            await asyncio.sleep(0.1)
+
+
+def enqueue_message(chat_id: int, text: str):
+    """যেকোনো জায়গা থেকে call করুন — queue তে যাবে"""
+    _msg_queue.put((chat_id, text))
+
 SHUTDOWN_AFTER_SECONDS = 5 * 3600 + 58 * 60 + 50  # 5h 58m 50s
 GRACEFUL_WAIT_SECONDS = 30  # চলমান কাজ শেষ করার সময়
 
@@ -346,7 +371,7 @@ async def sms_monitor_loop(app: Application):
                             f"━━━━━━━━━━━━━━━\n"
                             f"🕐 {time_str}"
                         )
-                        await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg)
+                        enqueue_message(GROUP_CHAT_ID, msg)
                         send_count += 1
 
                         if client_uname:
@@ -379,13 +404,8 @@ async def sms_monitor_loop(app: Application):
                             f"━━━━━━━━━━━━━━━\n"
                             f"🕐 {time_str}"
                         )
-                        await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=msg)
+                        enqueue_message(GROUP_CHAT_ID, msg)
                         send_count += 1
-
-                    # ✅ গ্রুপে পাঠানো প্রতি ২০টার পর ১ সেকেন্ড বিরতি
-                    # DM গুলো count এ ধরা হয়নি — শুধু group message count
-                    if send_count % 20 == 0:
-                        await asyncio.sleep(1)
 
                 except Exception as e:
                     err_str = str(e)
@@ -620,6 +640,7 @@ async def post_init(app: Application):
     # Step 6: SMS Monitor ও auto-shutdown শুরু
     asyncio.create_task(auto_shutdown(app))
     asyncio.create_task(sms_monitor_loop(app))
+    asyncio.create_task(_msg_sender_loop(app))
     logger.info("✅ Auto-shutdown ও SMS Monitor চালু হয়েছে।")
 # ══════════════════════════════════════════════
 #  MAIN
