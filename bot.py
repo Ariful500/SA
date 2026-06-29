@@ -347,16 +347,6 @@ async def sms_monitor_loop(app: Application):
 #  SCHEDULED JOBS
 # ══════════════════════════════════════════════
 
-async def auto_reset_limits(app: Application):
-    count = await reset_all_limits()
-    current_limit = await get_daily_limit()
-    await app.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=f"🔄 অটো লিমিট রিসেট সম্পন্ন!\n\n✅ {count} জন ইউজারের লিমিট {current_limit} হয়েছে।",
-    )
-    logger.info(f"Auto reset done for {count} users")
-
-
 async def auto_shutdown(app: Application):
     global _shutdown_mode
     
@@ -428,7 +418,15 @@ async def _startup_reset_check(app: Application):
     import datetime, json
     RESET_FLAG_FILE = "last_reset.json"
     now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+
+    # BD সকাল ৬টার আগে হলে কিছুই করবে না
+    if now_bd.hour < 6:
+        logger.info(f"⏳ BD time {now_bd.strftime('%H:%M')} — সকাল ৬টার আগে, skip।")
+        return
+
+    # সকাল ৬টার পরের date কে "আজকের reset date" ধরো
     today_str = now_bd.strftime("%Y-%m-%d")
+
     last_reset = ""
     try:
         if os.path.exists(RESET_FLAG_FILE):
@@ -436,9 +434,12 @@ async def _startup_reset_check(app: Application):
                 last_reset = json.load(f).get("date", "")
     except Exception:
         pass
+
     if last_reset == today_str:
         logger.info(f"✅ আজকে reset আগেই হয়েছে, skip।")
         return
+
+    # বাকি সব একই...
     logger.info(f"🔄 Startup reset চলছে...")
     count = await reset_all_limits()
     _reset_seen_sms()
@@ -540,16 +541,7 @@ def main():
 
     # Scheduler
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        auto_reset_limits,
-        CronTrigger(hour=LIMIT_RESET_HOUR, minute=0, timezone="Asia/Dhaka"),
-        args=[app],
-    )
-    scheduler.add_job(
-        _reset_seen_sms,
-        CronTrigger(hour=6, minute=0, timezone="Asia/Dhaka"),
-    )
-    scheduler.start()
+scheduler.start()
 
     logger.info("🚀 SA SMS WORK Bot চালু হয়েছে!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
