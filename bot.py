@@ -333,7 +333,15 @@ async def sms_monitor_loop(app: Application):
                         await asyncio.sleep(1)
 
                 except Exception as e:
-                    logger.error(f"[SMS Monitor] Send error: {e}")
+    err_str = str(e)
+    if "Flood control exceeded" in err_str or "429" in err_str:
+        import re
+        match = re.search(r'Retry in (\d+) seconds', err_str)
+        wait = int(match.group(1)) + 1 if match else 30
+        logger.warning(f"[SMS Monitor] Flood control, {wait}s অপেক্ষা...")
+        await asyncio.sleep(wait)
+    else:
+        logger.error(f"[SMS Monitor] Send error: {e}")
             if new_rows:
                 _save_seen_sms()
                 _save_leaderboard()
@@ -482,7 +490,6 @@ async def _startup_reset_check(app: Application):
     except Exception as e:
         logger.error(f"[StartupRangeCheck] Error: {e}")
 
-
 async def post_init(app: Application):
     await init_db()
     _load_leaderboard()
@@ -511,26 +518,50 @@ async def post_init(app: Application):
                 )
                 return
 
-    # Step 2: Startup reset (সকাল ৬টায় হলে)
+    # Step 2: BD সকাল ৬টার পরে হলে reset করো
+    import datetime
+    now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
+    if now_bd.hour >= 6:
+        logger.info("🔄 BD সকাল ৬টার পরে — reset শুরু হচ্ছে...")
+
+        global _seen_sms, _number_sms_count
+        _seen_sms = set()
+        _number_sms_count = {}
+        try:
+            with open(SEEN_SMS_FILE, "w") as f:
+                json.dump({"seen": [], "counts": {}}, f)
+        except Exception as e:
+            logger.error(f"[Reset] seen_sms error: {e}")
+
+        global _leaderboard_counts
+        _leaderboard_counts = {}
+        try:
+            with open(LEADERBOARD_FILE, "w") as f:
+                json.dump({"date": "", "counts": {}}, f)
+        except Exception as e:
+            logger.error(f"[Reset] leaderboard error: {e}")
+
+        logger.info("✅ Reset হয়েছে।")
+
+    # যেকোনো সময় — seen_sms load করো
+    _load_seen_sms()
+
+    # Step 3: _startup_reset_check (users daily limit reset)
     await _startup_reset_check(app)
 
-    # Step 3: Commands set
+    # Step 4: Commands set
     await app.bot.set_my_commands(_USER_CMDS)
     await app.bot.set_my_commands(_ADMIN_CMDS, scope=BotCommandScopeChat(chat_id=ADMIN_ID))
     await app.bot.set_my_commands(_GROUP_CMDS, scope=BotCommandScopeAllGroupChats())
 
-    # Step 4: Reset হওয়ার পরে JSON থেকে seen_sms load করো
-    _load_seen_sms()
-    logger.info("✅ seen_sms.json লোড হয়েছে।")
-
     # Step 5: ৫ সেকেন্ড অপেক্ষা
+    logger.info("⏳ ৫ সেকেন্ড অপেক্ষা করছে...")
     await asyncio.sleep(5)
 
-    # Step 6: SMS Monitor শুরু
+    # Step 6: SMS Monitor ও auto-shutdown শুরু
     asyncio.create_task(auto_shutdown(app))
     asyncio.create_task(sms_monitor_loop(app))
     logger.info("✅ Auto-shutdown ও SMS Monitor চালু হয়েছে।")
-
 # ══════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════
