@@ -598,33 +598,11 @@ async def post_init(app: Application):
                 )
                 return
 
-    # Step 2: BD সকাল ৬টার পরে হলে reset করো
+    # Step 2: seen_sms ও leaderboard দরকার নেই
+    # _startup_reset_check নিজেই reset handle করবে
     import datetime
     now_bd = datetime.datetime.utcnow() + datetime.timedelta(hours=6)
-    if now_bd.hour >= 6:
-        logger.info("🔄 BD সকাল ৬টার পরে — reset শুরু হচ্ছে...")
-
-        global _seen_sms, _number_sms_count
-        _seen_sms = set()
-        _number_sms_count = {}
-        try:
-            with open(SEEN_SMS_FILE, "w") as f:
-                json.dump({"seen": [], "counts": {}}, f)
-        except Exception as e:
-            logger.error(f"[Reset] seen_sms error: {e}")
-
-        global _leaderboard_counts
-        _leaderboard_counts = {}
-        try:
-            with open(LEADERBOARD_FILE, "w") as f:
-                json.dump({"date": "", "counts": {}}, f)
-        except Exception as e:
-            logger.error(f"[Reset] leaderboard error: {e}")
-
-        logger.info("✅ Reset হয়েছে।")
-
-    # যেকোনো সময় — seen_sms load করো
-    _load_seen_sms()
+    logger.info(f"✅ BD time: {now_bd.strftime('%H:%M')} — ready।")
 
     # Step 3: _startup_reset_check (users daily limit reset)
     await _startup_reset_check(app)
