@@ -685,11 +685,10 @@ async def post_init(app: Application):
     logger.info("⏳ ৫ সেকেন্ড অপেক্ষা করছে...")
     await asyncio.sleep(5)
 
-    # Step 6: SMS Monitor ও auto-shutdown শুরু
     asyncio.create_task(auto_shutdown(app))
-    asyncio.create_task(sms_monitor_loop(app))
     asyncio.create_task(_msg_sender_loop(app))
-    logger.info("✅ Auto-shutdown ও SMS Monitor চালু হয়েছে।")
+    await asyncio.sleep(2)
+    asyncio.create_task(sms_monitor_loop(app))
 # ══════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════
