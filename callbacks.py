@@ -582,7 +582,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         context.user_data["waiting_for_payment_value"] = method
-        context.user_data["waiting_for_payment_value"] = method
         context.user_data["waiting_since"] = time.time()
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         if method == "binance":
@@ -659,8 +658,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Edit Max Per Order (Admin) ──
     if data == "edit_max_per_order":
-        if user_id != ADMIN_ID:
-            await query.answer("🚫 শুধু অ্যাডমিন পারবেন।")
+    context.user_data.clear()
+    context.user_data["waiting_for_new_max_per_order"] = True  # ✅ ঠিক
+    current = await get_max_per_order()
             return
         context.user_data.clear()
         context.user_data["waiting_for_new_daily_limit"] = True
