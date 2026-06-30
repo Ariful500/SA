@@ -120,9 +120,9 @@
     "telegram_username": "KawsarVau",
     "client_id": "161184",
     "is_linked": true,
-    "daily_used": 20,
+    "daily_used": 40,
     "daily_limit": 120,
-    "total_allocated": 80,
+    "total_allocated": 100,
     "is_banned": false,
     "pending_reset_request": false,
     "created_at": "2026-06-29T06:55:55.367567"
