@@ -98,7 +98,7 @@ def _save_settings(settings: dict, git_message: str = "⚙️ Settings updated")
         with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)
         os.replace(tmp_file, SETTINGS_FILE)
-    _git_commit_push(SETTINGS_FILE, git_message)
+    _git_commit_push_background(SETTINGS_FILE, git_message)
 
 
 # ══════════════════════════════════════════════
