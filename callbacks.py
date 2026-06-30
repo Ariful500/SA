@@ -119,6 +119,26 @@ async def _show_search_results(update: Update, context: ContextTypes.DEFAULT_TYP
 #  TEXT HANDLER
 # ══════════════════════════════════════════════
 
+import time
+
+WAITING_TIMEOUT_SECONDS = 60
+
+_WAITING_KEYS = (
+    "waiting_for_username",
+    "waiting_for_payment_value",
+    "waiting_for_quantity",
+    "waiting_for_new_daily_limit",
+    "waiting_for_new_max_per_order",
+)
+
+
+def _is_waiting_expired(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    since = context.user_data.get("waiting_since")
+    if since is None:
+        return False
+    return (time.time() - since) > WAITING_TIMEOUT_SECONDS
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Shutdown Mode চেক ──
     from bot import is_shutdown_mode
@@ -129,30 +149,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
         )
         return
-    
+
     user_id = update.effective_user.id
     text = update.message.text.strip()
 
-    # ── New Daily Limit input (Admin) ──
-    if context.user_data.get("waiting_for_new_daily_limit"):
+    # ── Waiting state expiry চেক (১ মিনিট পার হলে অটো ক্যান্সেল) ──
+    if any(context.user_data.get(k) for k in _WAITING_KEYS) and _is_waiting_expired(context):
         context.user_data.clear()
-        try:
-            new_limit = int(text)
-            if new_limit < 1:
-                raise ValueError
-        except ValueError:
-            await update.message.reply_text("❌ ১ বা তার বেশি একটা সংখ্যা দিন।")
-            return
-        affected = await set_daily_limit(new_limit)
         await update.message.reply_text(
-            f"✅ *Daily Limit বদলানো হয়েছে!*\n\n"
-            f"📊 নতুন Daily Limit: *{new_limit}*\n"
-            f"👥 {affected} জন ইউজারের লিমিট এখনই আপডেট হয়েছে।",
+            "⏰ *সময় শেষ!*\n\n"
+            "১ মিনিটের মধ্যে কোনো ইনপুট দেননি, তাই রিকোয়েস্টটি বাতিল হয়ে গেছে।\n"
+            "আবার শুরু করতে সংশ্লিষ্ট কমান্ড/বাটন ব্যবহার করুন।",
             parse_mode="Markdown",
         )
         return
 
-    # ── New Max Per Order input (Admin) ──
+    # ── New Daily Limit input (Admin) ──
     if context.user_data.get("waiting_for_new_max_per_order"):
         context.user_data.clear()
         try:
@@ -440,6 +452,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         context.user_data["waiting_for_username"] = True
+        context.user_data["waiting_since"] = time.time()
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         await query.edit_message_text(
             "👤 *Lamix username পাঠান:*",
@@ -518,6 +531,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         context.user_data["waiting_for_payment_value"] = method
+        context.user_data["waiting_since"] = time.time()
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         if method == "binance":
             prompt = "🟡 *Binance UID পাঠান:*"
@@ -534,6 +548,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("confirm_pay_switch_"):
         method = data[len("confirm_pay_switch_"):]
         context.user_data["waiting_for_payment_value"] = method
+        context.user_data["waiting_since"] = time.time()
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         if method == "binance":
             prompt = "🟡 *Binance UID পাঠান:*"
@@ -576,6 +591,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data.clear()
         context.user_data["waiting_for_new_daily_limit"] = True
+        context.user_data["waiting_since"] = time.time()
         current = await get_daily_limit()
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         await query.edit_message_text(
@@ -594,7 +610,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data.clear()
         context.user_data["waiting_for_new_max_per_order"] = True
-        current = await get_max_per_order()
+        context.user_data["waiting_since"] = time.time()
+        current = await get_max_per_order())
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         await query.edit_message_text(
             f"🔢 *বর্তমান Max Per Order:* {current}\n\n"
@@ -645,6 +662,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data["selected_range"] = selected
         context.user_data["waiting_for_quantity"] = True
+        context.user_data["waiting_since"] = time.time()
         max_per_order = await get_max_per_order()
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         await query.edit_message_text(
