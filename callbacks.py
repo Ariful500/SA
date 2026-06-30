@@ -161,7 +161,7 @@ async def _waiting_timeout_callback(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
-            text="⏰ *সময় শেষ!*\n\nআপনি ১ মিনিটের মধ্যে কোনো উত্তর দেননি, তাই এই রিকোয়েস্টটি বাতিল হয়ে গেছে।\nআবার শুরু করতে সংশ্লিষ্ট কমান্ড/বাটন ব্যবহার করুন।",
+            text="⏰ *সময় শেষ!*\n\nআপনি ১ মিনিটের মধ্যে কোনো উত্তর দেননি, তাই এই রিকোয়েস্টটি বাতিল হয়েছে।",
             parse_mode="Markdown",
         )
     except Exception as e:
@@ -323,7 +323,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _handle_quantity_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # ✅ একই ইউজার ডাবল-ট্যাপ/দুই ডিভাইস থেকে একসাথে সাবমিট করলে এখানে আটকে যাবে
+    # ✅ একই ইউজার ডাবল-ট্যাপ/দুই ডিভাইস থেকে একসাথে সাবমিট করলে এখানে আটকে যায়
     if user_id in _users_submitting:
         await update.message.reply_text("⏳ আপনার আগের রিকোয়েস্ট এখনো প্রসেস হচ্ছে, অপেক্ষা করুন।")
         return
@@ -658,19 +658,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Edit Max Per Order (Admin) ──
     if data == "edit_max_per_order":
-    context.user_data.clear()
-    context.user_data["waiting_for_new_max_per_order"] = True  # ✅ ঠিক
-    current = await get_max_per_order()
+        if user_id != ADMIN_ID:
+            await query.answer("🚫 শুধু অ্যাডমিন পারবেন।")
             return
         context.user_data.clear()
-        context.user_data["waiting_for_new_daily_limit"] = True
+        context.user_data["waiting_for_new_max_per_order"] = True
         context.user_data["waiting_since"] = time.time()
-        current = await get_daily_limit()
+        current = await get_max_per_order()
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         await query.edit_message_text(
-            f"📊 *বর্তমান Daily Limit:* {current}\n\n"
-            f"নতুন Daily Limit সংখ্যা পাঠান:\n"
-            f"⚠️ এটি সবার (পুরনো ইউজার সহ) লিমিট এখনই বদলে দেবে।",
+            f"📊 *বর্তমান Max Per Order:* {current}\n\n"
+            f"নতুন Max Per Order সংখ্যা পাঠান:\n"
+            f"⚠️ এটি পরের অর্ডার থেকেই কার্যকর হবে।",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
@@ -680,7 +679,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Browse Ranges ──
     if data == "add_nums":
         if not user:
-            await query.edit_message_text("⚠️ /link দিয়ে আগে লিঙ্ক করুন।")
+            await query.edit_message_text("⚠️ /link দিয়ে আগে লিঙ্ক কর��ন।")
             return
         if user["is_banned"]:
             await query.edit_message_text("🚫 আপনি ব্যান হয়েছেন।")
@@ -731,7 +730,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _schedule_timeout_job(context, user_id, query.message.chat_id, query.message.message_id)
         return
 
-# ── Limit Reset Request ──
+    # ── Limit Reset Request ──
     if data == "request_reset":
         if user_id == ADMIN_ID:
             await query.answer("🚫 এডমিন নিজে রিকোয়েস্ট করতে পারবেন না।", show_alert=True)
