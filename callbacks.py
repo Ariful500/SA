@@ -710,7 +710,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── Range Selected ──
-     if data.startswith("range_"):
+    if data.startswith("range_"):
         range_id = data[len("range_"):]
         ranges = context.user_data.get("cached_ranges")
         if not ranges:
