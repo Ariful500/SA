@@ -19,7 +19,7 @@ from telegram.ext import (
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from config import BOT_TOKEN, ADMIN_ID, LIMIT_RESET_HOUR, DAILY_LIMIT, GROUP_CHAT_ID
+from config import BOT_TOKEN, ADMIN_ID, LIMIT_RESET_HOUR, DAILY_LIMIT, GROUP_CHAT_ID, GIT_BRANCH
 import lamix
 from database import (
     init_db, reset_all_limits, get_daily_limit,
@@ -67,7 +67,7 @@ def _git_worker():
             subprocess.run(["git", "config", "user.email",
                             "github-actions[bot]@users.noreply.github.com"],
                            check=False, capture_output=True)
-            subprocess.run(["git", "pull", "origin", "main", "--rebase"],
+            subprocess.run(["git", "pull", "origin", GIT_BRANCH, "--rebase"],
                            check=False, capture_output=True)
 
             for f in files:
@@ -78,7 +78,7 @@ def _git_worker():
             if result.returncode != 0:
                 subprocess.run(["git", "commit", "-m", message],
                                check=False, capture_output=True)
-                r = subprocess.run(["git", "push", "origin", "main"],
+                r = subprocess.run(["git", "push", "origin", GIT_BRANCH],
                                    check=False, capture_output=True)
                 if r.returncode == 0:
                     logger.info(f"[GitQueue] ✅ Pushed: {message}")
@@ -253,7 +253,7 @@ def _reset_leaderboard():
         result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
         if result.returncode != 0:
             subprocess.run(["git", "commit", "-m", "🔄 Leaderboard reset"], check=False)
-            subprocess.run(["git", "push", "origin", "main"], check=False)
+            subprocess.run(["git", "push", "origin", GIT_BRANCH], check=False)
     except Exception as e:
         logger.error(f"[Leaderboard] Reset error: {e}")
     logger.info("🔄 Leaderboard reset হয়েছে।")
@@ -309,7 +309,7 @@ def _reset_seen_sms():
         result = subprocess.run(["git", "diff", "--staged", "--quiet"], capture_output=True)
         if result.returncode != 0:
             subprocess.run(["git", "commit", "-m", "🔄 Seen SMS reset"], check=False)
-            subprocess.run(["git", "push", "origin", "main"], check=False)
+            subprocess.run(["git", "push", "origin", GIT_BRANCH], check=False)
     except Exception as e:
         logger.error(f"[SeenSMS] Reset error: {e}")
     logger.info("🔄 SMS seen list রিসেট হয়েছে।")
@@ -610,7 +610,7 @@ async def _startup_reset_check(app: Application):
             json.dump({"date": today_str}, f)
         subprocess.run(["git", "add", RESET_FLAG_FILE], check=False)
         subprocess.run(["git", "commit", "-m", f"🔄 Reset flag: {today_str}"], check=False)
-        subprocess.run(["git", "push", "origin", "main"], check=False)
+        subprocess.run(["git", "push", "origin", GIT_BRANCH], check=False)
     except Exception as e:
         logger.warning(f"Reset flag save error: {e}")
     try:
