@@ -209,8 +209,7 @@ def fetch_ranges() -> list[dict]:
     if not s:
         return []
     try:
-        # First: try to get a list of range names from a general request
-        params = _numbers_params(echo=str(int(time.time() * 1000)), length=10000, frange="")
+        params = _numbers_params(echo="2", length=10000)
         resp = s.get(
             f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
             params=params,
@@ -228,88 +227,44 @@ def fetch_ranges() -> list[dict]:
                 timeout=30,
             )
 
-        initial_rows = resp.json().get("aaData", [])
-        print(f"[Ranges] Initial rows fetched: {len(initial_rows)}")
+        rows = resp.json().get("aaData", [])
+        print(f"[Ranges] Total rows: {len(rows)}")
 
-        # Collect unique range names from initial_rows (best-effort list)
-        range_names = []
-        seen = set()
-        for row in initial_rows:
-            if len(row) < 2:
-                continue
-            rn = str(row[1]).strip()
-            if rn and rn not in seen:
-                seen.add(rn)
-                range_names.append(rn)
-
-        print(f"[Ranges] Unique range names from initial fetch: {len(range_names)}")
-
-        # Now fetch each range individually (frange param) to ensure we capture up to server per-range limits
         range_dict: dict[str, dict] = {}
-        for rn in range_names:
-            try:
-                prms = _numbers_params(echo=str(int(time.time() * 1000)), length=10000, frange=rn)
-                prms["iDisplayStart"] = "0"
-                prms["iDisplayLength"] = str(10000)
-                rresp = s.get(
-                    f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-                    params=prms,
-                    timeout=30,
-                )
-                if rresp.status_code in (302, 401, 403) or "login" in rresp.url.lower():
-                    print(f"[Ranges-PerRange] Session expired for range {rn}, re-login...")
-                    s = _reset_session()
-                    if not s:
-                        continue
-                    rresp = s.get(
-                        f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-                        params=prms,
-                        timeout=30,
-                    )
 
-                rows = rresp.json().get("aaData", []) or []
-                print(f"[Ranges-PerRange] range={rn} rows={len(rows)}")
-
-                for row in rows:
-                    if len(row) < 6:
-                        continue
-
-                    inp        = BeautifulSoup(str(row[0]), "html.parser").find("input")
-                    num_id     = inp["value"] if inp else ""
-                    range_name = str(row[1]).strip()
-                    number     = str(row[3]).strip()
-                    client_cell = str(row[5])
-
-                    payout_text = BeautifulSoup(str(row[4]), "html.parser").get_text(" ", strip=True)
-                    payterm = "Weekly" if "weekly" in payout_text.lower() else payout_text.split()[0]
-                    payout  = next((p for p in payout_text.split() if p.startswith("$")), "$0.019").replace("$", "")
-
-                    if range_name not in range_dict:
-                        range_dict[range_name] = {
-                            "id": range_name,
-                            "name": range_name,
-                            "available": 0,
-                            "total": 0,
-                            "payterm": payterm,
-                            "payout": payout,
-                            "country_code": _get_country_code(range_name),
-                            "numbers": [],
-                            "number_ids": [],
-                        }
-
-                    range_dict[range_name]["total"] += 1
-
-                    if _is_available(client_cell) and num_id and number:
-                        range_dict[range_name]["available"] += 1
-                        range_dict[range_name]["numbers"].append(number)
-                        range_dict[range_name]["number_ids"].append(num_id)
-
-                # gentle pause to avoid hammering the server
-                time.sleep(0.12)
-
-            except Exception as e:
-                print(f"[Ranges-PerRange] Error for range {rn}: {e}")
+        for row in rows:
+            if len(row) < 6:
                 continue
+
+            inp        = BeautifulSoup(str(row[0]), "html.parser").find("input")
+            num_id     = inp["value"] if inp else ""
+            range_name = str(row[1]).strip()
+            number     = str(row[3]).strip()
+            client_cell = str(row[5])
+
+            payout_text = BeautifulSoup(str(row[4]), "html.parser").get_text(" ", strip=True)
+            payterm = "Weekly" if "weekly" in payout_text.lower() else payout_text.split()[0]
+            payout  = next((p for p in payout_text.split() if p.startswith("$")), "$0.019").replace("$", "")
+
+            if range_name not in range_dict:
+                range_dict[range_name] = {
+                    "id": range_name,
+                    "name": range_name,
+                    "available": 0,
+                    "total": 0,
+                    "payterm": payterm,
+                    "payout": payout,
+                    "country_code": _get_country_code(range_name),
+                    "numbers": [],
+                    "number_ids": [],
+                }
+
+            range_dict[range_name]["total"] += 1
+
+            if _is_available(client_cell) and num_id and number:
+                range_dict[range_name]["available"] += 1
+                range_dict[range_name]["numbers"].append(number)
+                range_dict[range_name]["number_ids"].append(num_id)
 
         result = list(range_dict.values())
         result.sort(key=lambda x: x["name"].upper())
