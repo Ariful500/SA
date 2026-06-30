@@ -128,8 +128,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
-
 async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import time
+    from callbacks import _schedule_timeout_job
+
     user_id = update.effective_user.id
     user = await get_user(user_id)
     if user and user.get("is_linked") and user.get("username"):
@@ -138,16 +140,15 @@ async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
         )
         return
-    import time
     context.user_data["waiting_for_username"] = True
     context.user_data["waiting_since"] = time.time()
     keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
-    await update.message.reply_text(
+    sent = await update.message.reply_text(
         "👤 *Lamix username পাঠান:*",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
-
+    _schedule_timeout_job(context, user_id, sent.chat_id, sent.message_id)
 
 async def unlink_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -203,6 +204,8 @@ async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from callbacks import _cancel_timeout_job
+    _cancel_timeout_job(context, update.effective_user.id)
     context.user_data.clear()
     await update.message.reply_text("❌ বাতিল করা হয়েছে।")
 
