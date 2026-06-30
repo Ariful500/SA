@@ -5,9 +5,12 @@ from telegram.ext import ContextTypes
 
 # ✅ Per-range lock — শুধু একই range এ conflict আটকায়, বাকিরা parallel চলে
 _range_locks: dict[str, asyncio.Lock] = {}
-_range_locks_mutex = asyncio.Lock()
+_range_locks_mutex: asyncio.Lock | None = None
 
 async def _get_range_lock(range_id: str) -> asyncio.Lock:
+    global _range_locks_mutex
+    if _range_locks_mutex is None:
+        _range_locks_mutex = asyncio.Lock()
     async with _range_locks_mutex:
         if range_id not in _range_locks:
             _range_locks[range_id] = asyncio.Lock()
