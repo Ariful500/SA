@@ -28,8 +28,7 @@ def _git_commit_push(filepath: str, message: str):
         git_push_async([filepath], message)
         print(f"[Git] ✅ Queued: {message}")
     except ImportError:
-    except ImportError:
-        # fallback — bot import না হলে সরাসরি push
+    # fallback code
         with _git_lock:
             try:
                 subprocess.run(["git", "pull", "origin", GIT_BRANCH, "--rebase"],
