@@ -63,7 +63,7 @@ def _is_valid_malaysia(number: str) -> bool:
     digits = number.lstrip("+")
     if digits.startswith("60"):
         digits = digits[2:]
-    return len(digits) == 10
+    return len(digits) in (9, 10)  # ← এখানে পরিবর্তন করুন
 
 
 def _post_process_numbers(numbers: list[str], country_code: str) -> list[str]:
