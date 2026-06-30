@@ -80,9 +80,9 @@
     "telegram_username": "NAIMISLAM0120",
     "client_id": "161343",
     "is_linked": true,
-    "daily_used": 0,
+    "daily_used": 5,
     "daily_limit": 120,
-    "total_allocated": 10,
+    "total_allocated": 15,
     "is_banned": false,
     "pending_reset_request": false,
     "created_at": "2026-06-29T03:09:42.135320"
