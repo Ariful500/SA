@@ -39,8 +39,12 @@ from user_commands import (
 #  RANGE HELPERS
 # ══════════════════════════════════════════════
 
-async def _show_ranges(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
-    ranges = await lamix.fetch_ranges_async()
+async def _show_ranges(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0, force_refresh: bool = False):
+    ranges = context.user_data.get("cached_ranges")
+    if ranges is None or force_refresh:
+        ranges = await lamix.fetch_ranges_async()
+        context.user_data["cached_ranges"] = ranges
+
     if not ranges:
         msg = "❌ কোনো রেঞ্জ পাওয়া যায়নি।"
         if update.callback_query:
@@ -49,10 +53,9 @@ async def _show_ranges(update: Update, context: ContextTypes.DEFAULT_TYPE, page:
             await update.message.reply_text(msg)
         return
 
-    per_page = 12
+    per_page = 10
     total_pages = max(1, (len(ranges) + per_page - 1) // per_page)
     page_ranges = ranges[page * per_page:(page + 1) * per_page]
-
     keyboard = [
         [InlineKeyboardButton(f"📦 {r['name']} ({r['available']})", callback_data=f"range_{r['id']}")]
         for r in page_ranges
@@ -692,7 +695,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
-        await _show_ranges(update, context, page=0)
+        await _show_ranges(update, context, page=0, force_refresh=True)
         return
 
     # ── Range Page ──
@@ -707,9 +710,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── Range Selected ──
-    if data.startswith("range_"):
+     if data.startswith("range_"):
         range_id = data[len("range_"):]
-        ranges = await lamix.fetch_ranges_async()
+        ranges = context.user_data.get("cached_ranges")
+        if not ranges:
+            ranges = await lamix.fetch_ranges_async()
+            context.user_data["cached_ranges"] = ranges
         selected = next((r for r in ranges if str(r["id"]) == range_id), None)
         if not selected:
             await query.edit_message_text("❌ রেঞ্জ পাওয়া যায়নি।")
