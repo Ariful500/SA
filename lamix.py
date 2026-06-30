@@ -117,6 +117,58 @@ def _numbers_params(echo: str = "1", length: int = 10000, frange: str = "") -> d
         params[f"bSortable_{i}"] = "false" if i in (0, 7) else "true"
     return params
 
+# ══════════════════════════════════════════════
+#  BATCHED FETCH — data_smsnumbers.php থেকে সব রো আনে (10,000 limit bypass)
+# ══════════════════════════════════════════════
+
+def _fetch_all_smsnumbers_rows(s: requests.Session, frange: str = "", echo_base: int = 2) -> tuple:
+    """
+    data_smsnumbers.php endpoint টা একবারে সর্বোচ্চ ~10,000 রো দেয়।
+    মোট নাম্বার তার বেশি হলে iDisplayStart বাড়িয়ে বাড়িয়ে batch করে সব রো টেনে আনে।
+    রিটার্ন: (session, rows) — session reset হলে নতুন session রিটার্ন হবে।
+    """
+    BATCH_SIZE = 10000
+    MAX_BATCHES = 20  # safety cap (= ২,০০,০০০ রো পর্যন্ত)
+    rows: list = []
+    display_start = 0
+
+    for batch_num in range(MAX_BATCHES):
+        params = _numbers_params(echo=str(echo_base + batch_num), length=BATCH_SIZE, frange=frange)
+        params["iDisplayStart"] = str(display_start)
+
+        resp = s.get(
+            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
+            params=params,
+            timeout=30,
+        )
+
+        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
+            print("[FetchAll] Session expired, re-login...")
+            s = _reset_session()
+            if not s:
+                return None, []
+            resp = s.get(
+                f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
+                params=params,
+                timeout=30,
+            )
+
+        batch_rows = resp.json().get("aaData", [])
+        print(f"[FetchAll] Batch {batch_num+1}: start={display_start}, got {len(batch_rows)} rows")
+
+        if not batch_rows:
+            break
+
+        rows.extend(batch_rows)
+        display_start += BATCH_SIZE
+
+        if len(batch_rows) < BATCH_SIZE:
+            break
+
+    print(f"[FetchAll] Total rows (all batches): {len(rows)}")
+    return s, rows
+
+
 
 # ══════════════════════════════════════════════
 #  AVAILABLE CHECK
@@ -209,25 +261,9 @@ def fetch_ranges() -> list[dict]:
     if not s:
         return []
     try:
-        params = _numbers_params(echo="2", length=10000)
-        resp = s.get(
-            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-            params=params,
-            timeout=30,
-        )
-
-        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
-            print("[Ranges] Session expired, re-login...")
-            s = _reset_session()
-            if not s:
-                return []
-            resp = s.get(
-                f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-                params=params,
-                timeout=30,
-            )
-
-        rows = resp.json().get("aaData", [])
+        s, rows = _fetch_all_smsnumbers_rows(s, frange="", echo_base=2)
+        if s is None:
+            return []
         print(f"[Ranges] Total rows: {len(rows)}")
 
         range_dict: dict[str, dict] = {}
@@ -533,13 +569,9 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
     if not s:
         return None
     try:
-        params = _numbers_params(echo="3", length=10000, frange="")
-        resp = s.get(
-            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-            params=params,
-            timeout=30,
-        )
-        all_rows = resp.json().get("aaData", [])
+        s, all_rows = _fetch_all_smsnumbers_rows(s, frange="", echo_base=3)
+        if s is None:
+            return None
         rows = [r for r in all_rows if len(r) > 1 and str(r[1]).strip() == range_name]
         print(f"[Allocate] '{range_name}' rows: {len(rows)} (total: {len(all_rows)})")
 
@@ -666,24 +698,9 @@ def fetch_active_count(lamix_username: str) -> int:
     if not s:
         return 0
     try:
-        params = _numbers_params(echo="4", length=10000)
-        resp = s.get(
-            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-            params=params,
-            timeout=30,
-        )
-
-        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
-            s = _reset_session()
-            if not s:
-                return 0
-            resp = s.get(
-                f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-                params=params,
-                timeout=30,
-            )
-
-        rows = resp.json().get("aaData", [])
+        s, rows = _fetch_all_smsnumbers_rows(s, frange="", echo_base=4)
+        if s is None:
+            return 0
         count = 0
         for row in rows:
             if len(row) < 6:
@@ -860,25 +877,10 @@ def fetch_number_limits() -> dict:
     if not s:
         return {}
     try:
-        params = _numbers_params(echo="5", length=10000)
-        resp = s.get(
-            f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-            params=params,
-            timeout=30,
-        )
-        if resp.status_code in (302, 401, 403) or "login" in resp.url.lower():
-            s = _reset_session()
-            if not s:
-                return {}
-            resp = s.get(
-                f"{LAMIX_URL}/ints/agent/res/data_smsnumbers.php",
-                params=params,
-                timeout=30,
-            )
-
-        rows = resp.json().get("aaData", [])
+        s, rows = _fetch_all_smsnumbers_rows(s, frange="", echo_base=5)
+        if s is None:
+            return {}
         result = {}
-
         for row in rows:
             if len(row) < 6:
                 continue
