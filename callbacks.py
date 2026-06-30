@@ -49,7 +49,7 @@ async def _show_ranges(update: Update, context: ContextTypes.DEFAULT_TYPE, page:
             await update.message.reply_text(msg)
         return
 
-    per_page = 12
+    per_page = 10   # পরিবর্তন: আগে ছিল 12
     total_pages = max(1, (len(ranges) + per_page - 1) // per_page)
     page_ranges = ranges[page * per_page:(page + 1) * per_page]
 
@@ -88,7 +88,7 @@ async def _show_search_results(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text(msg, parse_mode="Markdown")
         return
 
-    per_page = 8
+    per_page = 10   # পরিবর্তন: আগে ছিল 8
     total_pages = max(1, (len(filtered) + per_page - 1) // per_page)
     page_ranges = filtered[page * per_page:(page + 1) * per_page]
 
