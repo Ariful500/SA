@@ -33,3 +33,5 @@ LAMIX_PASSWORD = os.getenv("LAMIX_PASSWORD")
 DAILY_LIMIT       = 120
 LIMIT_RESET_HOUR  = 6
 MAX_PER_ORDER     = 30
+
+GIT_BRANCH = os.getenv("GIT_BRANCH", "main")
