@@ -6,7 +6,7 @@ import os
 import asyncio
 import subprocess
 from datetime import datetime
-from config import DAILY_LIMIT as _DEFAULT_DAILY_LIMIT, MAX_PER_ORDER as _DEFAULT_MAX_PER_ORDER
+from config import DAILY_LIMIT as _DEFAULT_DAILY_LIMIT, MAX_PER_ORDER as _DEFAULT_MAX_PER_ORDER, GIT_BRANCH
 
 DB_FILE = "users.json"
 SETTINGS_FILE = "settings.json"
@@ -32,13 +32,14 @@ def _git_commit_push(filepath: str, message: str):
         with _git_lock:
             try:
                 subprocess.run(["git", "pull", "origin", "main", "--rebase"],
-                               check=False, capture_output=True)
-                subprocess.run(["git", "add", filepath], check=False)
-                result = subprocess.run(["git", "diff", "--staged", "--quiet"],
-                                        capture_output=True)
-                if result.returncode != 0:
-                    subprocess.run(["git", "commit", "-m", message], check=False)
-                    subprocess.run(["git", "push", "origin", "main"], check=False)
+                subprocess.run(["git", "pull", "origin", GIT_BRANCH, "--rebase"],
+               check=False, capture_output=True)
+subprocess.run(["git", "add", filepath], check=False)
+result = subprocess.run(["git", "diff", "--staged", "--quiet"],
+                        capture_output=True)
+if result.returncode != 0:
+    subprocess.run(["git", "commit", "-m", message], check=False)
+    subprocess.run(["git", "push", "origin", GIT_BRANCH], check=False)
                     print(f"[Git] ✅ Saved (fallback): {message}")
             except Exception as e:
                 print(f"[Git] Fallback error: {e}")
