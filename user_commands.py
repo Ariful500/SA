@@ -138,7 +138,9 @@ async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
         )
         return
+    import time
     context.user_data["waiting_for_username"] = True
+    context.user_data["waiting_since"] = time.time()
     keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
     await update.message.reply_text(
         "👤 *Lamix username পাঠান:*",
