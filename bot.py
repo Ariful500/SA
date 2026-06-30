@@ -16,8 +16,6 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
 )
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 
 from config import BOT_TOKEN, ADMIN_ID, LIMIT_RESET_HOUR, DAILY_LIMIT, GROUP_CHAT_ID, GIT_BRANCH
 import lamix
@@ -722,9 +720,6 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & PRIVATE_ONLY, handle_text))
 
-    # Scheduler
-    scheduler = AsyncIOScheduler()
-    scheduler.start()
     logger.info("🚀 SA SMS WORK Bot চালু হয়েছে!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
     logger.info("✅ বট গ্রেসফুলি বন্ধ হয়েছে (exit code 0)।")
