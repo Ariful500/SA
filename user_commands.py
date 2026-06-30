@@ -59,9 +59,17 @@ def _fix_malaysia(number: str) -> str:
     return number
 
 
+def _is_valid_malaysia(number: str) -> bool:
+    digits = number.lstrip("+")
+    if digits.startswith("60"):
+        digits = digits[2:]
+    return len(digits) == 10
+
+
 def _post_process_numbers(numbers: list[str], country_code: str) -> list[str]:
     if country_code == "60":
-        return [_fix_malaysia(n) for n in numbers]
+        fixed = [_fix_malaysia(n) for n in numbers]
+        return [n for n in fixed if _is_valid_malaysia(n)]
     if country_code == "970":
         return [_fix_palestine(n) for n in numbers]
     return numbers
