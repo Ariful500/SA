@@ -479,7 +479,6 @@ def update_client_payment(lamix_username: str, payment_type: str, value: str) ->
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                 "Content-Type": "application/x-www-form-urlencoded",
                 "Upgrade-Insecure-Requests": "1",
-                "X-Requested-With": None,
             },
             timeout=15,
             allow_redirects=True,
@@ -594,7 +593,6 @@ def allocate_numbers(client_id: str, range_name: str, quantity: int) -> dict | N
                             "payout":  "0",
                         },
                         headers={
-                            "X-Requested-With": None,
                             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                             "Content-Type": "application/x-www-form-urlencoded",
                             "Referer": mysms_referer,
