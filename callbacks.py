@@ -139,6 +139,55 @@ def _is_waiting_expired(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return (time.time() - since) > WAITING_TIMEOUT_SECONDS
 
 
+def _timeout_job_name(user_id: int) -> str:
+    return f"waiting_timeout_{user_id}"
+
+
+def _cancel_timeout_job(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """ইউজার সময়মতো রেসপন্স দিলে বা cancel করলে পেন্ডিং timeout job বাতিল করো"""
+    if context.job_queue:
+        for job in context.job_queue.get_jobs_by_name(_timeout_job_name(user_id)):
+            job.schedule_removal()
+
+
+async def _waiting_timeout_callback(context: ContextTypes.DEFAULT_TYPE):
+    """১ মিনিট পার হলে স্বয়ংক্রিয়ভাবে কল হবে — একই prompt মেসেজ এডিট করে দেবে"""
+    job = context.job
+    chat_id = job.data["chat_id"]
+    message_id = job.data["message_id"]
+    user_id = job.data["user_id"]
+
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text="⏰ *সময় শেষ!*\n\nআপনি ১ মিনিটের মধ্যে কোনো উত্তর দেননি, তাই এই রিকোয়েস্টটি বাতিল হয়ে গেছে।\nআবার শুরু করতে সংশ্লিষ্ট কমান্ড/বাটন ব্যবহার করুন।",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        print(f"[Timeout] Edit failed: {e}")
+
+    # ওই ইউজারের waiting state ক্লিয়ার করো (job context থেকে সরাসরি user_data পাওয়া যায় না)
+    app_user_data = context.application.user_data.get(user_id)
+    if app_user_data is not None:
+        for k in _WAITING_KEYS:
+            app_user_data.pop(k, None)
+        app_user_data.pop("waiting_since", None)
+
+
+def _schedule_timeout_job(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int, message_id: int):
+    """নতুন waiting state শুরু করার সময় কল করুন — আগের কোনো পেন্ডিং job থাকলে রিপ্লেস হবে"""
+    if not context.job_queue:
+        return
+    _cancel_timeout_job(context, user_id)
+    context.job_queue.run_once(
+        _waiting_timeout_callback,
+        when=WAITING_TIMEOUT_SECONDS,
+        data={"chat_id": chat_id, "message_id": message_id, "user_id": user_id},
+        name=_timeout_job_name(user_id),
+    )
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Shutdown Mode চেক ──
     from bot import is_shutdown_mode
@@ -205,12 +254,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ আপডেট করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।")
         return
-
+        
     # ── Username input ──
     if context.user_data.get("waiting_for_username"):
+        _cancel_timeout_job(context, user_id)
         context.user_data.clear()
         lamix_username = text.strip()
-
         # ✅ check + link এখন try_link_user() এর ভেতরে এক DB lock এর মধ্যে atomic ভাবে
         # হয় — দুজন একসাথে একই username দিলে রেস কন্ডিশন হবে না
         await update.message.reply_text("⏳ যাচাই করা হচ্ছে...")
@@ -437,6 +486,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Cancel ──
     if data == "cancel":
+        _cancel_timeout_job(context, user_id)
         context.user_data.clear()
         await query.edit_message_text("❌ বাতিল করা হয়েছে।")
         return
@@ -459,6 +509,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+        _schedule_timeout_job(context, user_id, query.message.chat_id, query.message.message_id)
         return
 
     # ── Unlink ──
@@ -531,6 +582,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         context.user_data["waiting_for_payment_value"] = method
+        context.user_data["waiting_for_payment_value"] = method
         context.user_data["waiting_since"] = time.time()
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         if method == "binance":
@@ -542,6 +594,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             prompt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        _schedule_timeout_job(context, user_id, query.message.chat_id, query.message.message_id)
         return
 
     # ── Confirm Payment Switch ──
@@ -559,6 +612,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             prompt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        _schedule_timeout_job(context, user_id, query.message.chat_id, query.message.message_id)
         return
 
     # ── Confirm Reset (Admin) ──
@@ -609,17 +663,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("🚫 শুধু অ্যাডমিন পারবেন।")
             return
         context.user_data.clear()
-        context.user_data["waiting_for_new_max_per_order"] = True
+        context.user_data["waiting_for_new_daily_limit"] = True
         context.user_data["waiting_since"] = time.time()
-        current = await get_max_per_order())
+        current = await get_daily_limit()
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
         await query.edit_message_text(
-            f"🔢 *বর্তমান Max Per Order:* {current}\n\n"
-            f"নতুন Max Per Order সংখ্যা পাঠান:\n"
-            f"⚠️ এটি পরের অর্ডার থেকেই কার্যকর হবে।",
+            f"📊 *বর্তমান Daily Limit:* {current}\n\n"
+            f"নতুন Daily Limit সংখ্যা পাঠান:\n"
+            f"⚠️ এটি সবার (পুরনো ইউজার সহ) লিমিট এখনই বদলে দেবে।",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+        _schedule_timeout_job(context, user_id, query.message.chat_id, query.message.message_id)
         return
 
     # ── Browse Ranges ──
@@ -668,11 +723,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"📦 *{selected['name']}*\n"
             f"Available: {selected.get('available', 0)} ✅\n\n"
-            f"🔢 কতটি নম্বর চান? (১–{max_per_order})\n"
+            f"🔢 কতটি নম্বর চান? (1–{max_per_order})\n"
             f"সংখ্যা পাঠান:",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+        _schedule_timeout_job(context, user_id, query.message.chat_id, query.message.message_id)
         return
 
 # ── Limit Reset Request ──
