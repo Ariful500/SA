@@ -103,10 +103,10 @@
   },
   "6063679790": {
     "user_id": 6063679790,
-    "username": null,
+    "username": "SA_JAKARIA67",
     "telegram_username": "Jvjchuvkvhch123456",
-    "client_id": null,
-    "is_linked": false,
+    "client_id": "161347",
+    "is_linked": true,
     "daily_used": 0,
     "daily_limit": 120,
     "total_allocated": 86,
